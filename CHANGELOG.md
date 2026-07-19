@@ -14,6 +14,7 @@ Dashboard usability release. Requires a database upgrade (open install.php).
 - A bill allocated to a paycheck that lands after its due date shows its
   due date in red.
 - Amounts are edited with a single click (was double-click).
+- Dollar-sign favicon and a version footer on the dashboard.
 
 ## 0.1
 
