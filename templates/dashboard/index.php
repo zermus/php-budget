@@ -1,4 +1,4 @@
-<?php use App\Csrf; use App\View; ?>
+<?php use App\App; use App\Csrf; use App\View; ?>
 <div class="container" id="dashboard" data-csrf="<?= e(Csrf::token()) ?>"
      data-paid-url="<?= e(url('/occurrences/paid')) ?>"
      data-occ-amount-url="<?= e(url('/occurrences/amount')) ?>"
@@ -45,4 +45,6 @@
         </div>
         <?php endif; ?>
     <?php endif; ?>
+
+    <div class="version-note">php-budget v<?= e(App::VERSION) ?></div>
 </div>
