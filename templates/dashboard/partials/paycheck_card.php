@@ -10,7 +10,7 @@ $isWave = !empty($paycheck['is_wave']);
     <div class="paycheck-head">
         <span class="paycheck-date">
             <?= e(short_date((string) $paycheck['pay_date'])) ?>
-            <?php if ($isWave): ?><span class="badge surplus">Surplus</span><?php endif; ?>
+            <?php if ($isWave): ?><span class="badge wave">Wave</span><?php endif; ?>
         </span>
         <span class="paycheck-income">
             Income: $<span class="amount editable pay-amount" title="Double-click to edit"><?= e(money((string) $paycheck['amount'])) ?></span>
@@ -50,7 +50,7 @@ $isWave = !empty($paycheck['is_wave']);
     <div class="paycheck-totals">
         <div><span>Bills</span> <span class="amount bills-total">$<?= e(money((string) $billsTotal)) ?></span></div>
         <div>
-            <span><?= $isWave ? 'Surplus' : 'Remaining' ?></span>
+            <span>Remaining</span>
             <span class="amount remaining <?= $remaining < 0 ? 'remaining-neg' : 'remaining-pos' ?>">$<?= e(money((string) $remaining)) ?></span>
         </div>
     </div>

@@ -165,7 +165,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
     margin-left: 8px;
     vertical-align: middle;
 }
-.badge.surplus { background: #2c3f5e; color: #9ec3ff; }
+.badge.wave { background: #2c3f5e; color: #9ec3ff; }
 
 .occ-row {
     display: flex;

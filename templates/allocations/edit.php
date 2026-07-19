@@ -21,7 +21,7 @@
                         <option value="<?= (int) $paycheck['id'] ?>"
                             <?= (int) ($allocation['paycheck_id'] ?? 0) === (int) $paycheck['id'] ? 'selected' : '' ?>>
                             <?= e(short_date((string) $paycheck['pay_date'])) ?>
-                            ($<?= e(money((string) $paycheck['amount'])) ?><?= !empty($paycheck['is_wave']) ? ', surplus check' : '' ?>)
+                            ($<?= e(money((string) $paycheck['amount'])) ?><?= !empty($paycheck['is_wave']) ? ', wave check' : '' ?>)
                         </option>
                     <?php endforeach; ?>
                 </select>

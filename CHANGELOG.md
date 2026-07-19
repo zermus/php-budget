@@ -12,7 +12,7 @@ Initial release.
   days), or monthly (one fixed day), with month-length clamping (a day of 31
   falls on Feb 28/29).
 - Wave-check detection: a third biweekly paycheck landing in one calendar
-  month is flagged as a "Surplus" check.
+  month is flagged with a "Wave" badge.
 - Bills with three recurrence types: monthly on a day, every N paychecks
   (anchored to a first paycheck, so two bill sets can alternate), and one-time.
 - Automatic allocation of each bill occurrence to the latest paycheck on or

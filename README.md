@@ -7,7 +7,7 @@ recurring paychecks are allocated to bills. The dashboard shows a rolling
 ~90-day window of upcoming paychecks, what each one pays, and what's left
 over. Bills get a paid checkbox, nightly email reminders cover anything due
 soon or overdue, and a third biweekly check landing in one calendar month is
-flagged as a "Surplus" (wave) check.
+flagged with a "Wave" badge — the extra check of a three-paycheck month.
 
 There is no bank sync, but paying a bill goes through a single
 `markPaid(occurrence, user, source)` seam (`source` is `manual` or `sync`),
@@ -113,8 +113,10 @@ auth) in Settings; the reminder cron uses it for that user's email.
   semimonthly pays on two fixed days of the month; monthly on one. Days past
   the end of a short month clamp to its last day.
 - **Wave checks:** with a biweekly schedule, a month containing three
-  paychecks gets its third check flagged as "Surplus" on the dashboard.
-  Semimonthly and monthly schedules can never have one.
+  paychecks gets its third check flagged with a "Wave" badge on the
+  dashboard. The badge marks the schedule's extra check — whether it ends up
+  with money to spare depends on what gets allocated to it. Semimonthly and
+  monthly schedules can never have one.
 - **Bills** recur monthly on a day, every N paychecks, or once. An
   every-N-paychecks bill is anchored to the first paycheck it applies to,
   which fixes its phase — e.g. two sets of bills alternating between
