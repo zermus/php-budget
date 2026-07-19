@@ -1,0 +1,9 @@
+config.php
+/vendor/
+/releases/
+/Releases/
+mail.log
+*.log
+/seed_data/
+.DS_Store
+Thumbs.db

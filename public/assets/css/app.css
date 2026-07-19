@@ -1,0 +1,236 @@
+/* php-budget stylesheet — dark, compact, functional. */
+
+:root {
+    --bg: #121212;
+    --panel: #1d1d1f;
+    --panel-2: #26262a;
+    --border: #35353a;
+    --text: #d6d6d6;
+    --muted: #8f8f96;
+    --accent: #4caf82;
+    --accent-dim: #2e6b50;
+    --danger: #ff6347;
+    --warn: #e6b422;
+    --link: #7fd4ab;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+}
+
+h1, h2, h3 { color: #fff; font-weight: 600; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+pre {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+}
+
+/* --- Navigation ------------------------------------------------------- */
+
+.topnav {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+}
+.topnav .brand { color: var(--accent); font-weight: 700; font-size: 17px; margin-right: 8px; }
+.topnav a { color: var(--text); }
+.topnav a:hover { color: #fff; text-decoration: none; }
+.topnav .logout { margin-left: auto; }
+
+/* --- Layout ------------------------------------------------------------ */
+
+.container { max-width: 1080px; margin: 24px auto; padding: 0 16px; }
+.container.narrow { max-width: 520px; }
+.inline { display: inline; }
+
+.page-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* --- Forms -------------------------------------------------------------- */
+
+.field { margin-bottom: 14px; }
+.field label { display: block; margin-bottom: 4px; color: var(--muted); }
+.checkbox-field { display: flex; gap: 8px; align-items: flex-start; }
+.checkbox-field label { color: var(--text); }
+
+input[type="text"], input[type="email"], input[type="password"],
+input[type="date"], input[type="number"], select, textarea {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 15px;
+}
+input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent-dim); }
+input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+
+.btn {
+    display: inline-block;
+    padding: 7px 14px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+}
+.btn:hover { border-color: var(--accent-dim); text-decoration: none; }
+.btn.primary { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; }
+.btn.primary:hover { background: var(--accent); }
+.btn.danger { color: var(--danger); }
+.btn.small { padding: 3px 9px; font-size: 13px; }
+.btn.link { background: none; border: none; color: var(--text); padding: 0; font-size: 15px; }
+.btn.link:hover { color: #fff; }
+
+.password-requirements { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+/* --- Flash / messages ---------------------------------------------------- */
+
+.flash { max-width: 1080px; margin: 12px auto 0; padding: 0 16px; }
+.message { padding: 10px 14px; border-radius: 6px; margin: 10px 0; }
+.message.success { background: #1d3328; color: #9fe0bf; border: 1px solid var(--accent-dim); }
+.message.error { background: #3a201b; color: #ffb3a3; border: 1px solid #6b3428; }
+.message.warning { background: #38311a; color: #eed990; border: 1px solid #6b5c28; }
+
+/* --- Login --------------------------------------------------------------- */
+
+.login-form {
+    max-width: 360px;
+    margin: 12vh auto 0;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px;
+    text-align: center;
+}
+.login-form input { margin-bottom: 12px; }
+.login-form button { width: 100%; }
+
+/* --- Dashboard: paycheck cards ------------------------------------------- */
+
+.paycheck-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.paycheck-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.paycheck-card.current { border-color: var(--accent-dim); }
+
+.paycheck-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+.paycheck-date { font-weight: 600; color: #fff; }
+.paycheck-income { color: var(--muted); font-size: 14px; }
+.paycheck-income .amount { color: var(--text); }
+
+.badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+.badge.surplus { background: #2c3f5e; color: #9ec3ff; }
+
+.occ-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px dotted #2a2a2e;
+}
+.occ-row:last-of-type { border-bottom: none; }
+.occ-row .occ-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.occ-row .occ-name a { color: var(--text); }
+.occ-row .occ-amount { font-variant-numeric: tabular-nums; }
+.occ-row.paid .occ-name, .occ-row.paid .occ-amount {
+    text-decoration: line-through;
+    color: var(--muted);
+}
+.occ-row .split-tag { font-size: 12px; color: var(--warn); }
+.occ-row.overdue .occ-amount, .occ-row.overdue .occ-name { color: var(--danger); }
+.occ-row.overdue.paid .occ-name, .occ-row.overdue.paid .occ-amount { color: var(--muted); }
+
+.paycheck-totals {
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    padding-top: 8px;
+    font-size: 14px;
+}
+.paycheck-totals div { display: flex; justify-content: space-between; padding: 2px 0; }
+.paycheck-totals .amount { font-variant-numeric: tabular-nums; }
+.remaining-pos { color: var(--accent); font-weight: 600; }
+.remaining-neg { color: var(--danger); font-weight: 600; }
+
+.empty-note { color: var(--muted); font-style: italic; padding: 6px 0; }
+
+/* --- Tables (bills list, allocations) ------------------------------------- */
+
+table.list {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 14px;
+}
+table.list th, table.list td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid #2a2a2e;
+}
+table.list th { background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: 13px; }
+table.list tr:last-child td { border-bottom: none; }
+table.list td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.list th.num { text-align: right; }
+table.list .actions { white-space: nowrap; text-align: right; }
+tr.inactive td { color: var(--muted); }
+
+/* --- Allocation editor ---------------------------------------------------- */
+
+.alloc-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.alloc-row select { flex: 1; }
+.alloc-row input { width: 130px; }
+
+/* --- Responsive ------------------------------------------------------------ */
+
+@media (max-width: 600px) {
+    .topnav { flex-wrap: wrap; gap: 12px; }
+    .paycheck-grid { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,30 @@
+# php-budget flat-deploy shim.
+# Used when the app is extracted directly into a web root. If your document
+# root points at public/ instead, this file is never consulted.
+
+# Never serve application internals or the config file.
+<Files "config.php">
+    Require all denied
+</Files>
+<Files "config.sample.php">
+    Require all denied
+</Files>
+<Files "composer.json">
+    Require all denied
+</Files>
+<Files "composer.lock">
+    Require all denied
+</Files>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Deny direct access to internal directories.
+    RewriteRule ^(src|templates|migrations|vendor|bin|releases|tests)(/|$) - [F,L]
+
+    # Requests already targeting public/ pass through (public/.htaccess takes over).
+    RewriteRule ^public/ - [L]
+
+    # Map everything else into public/.
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
