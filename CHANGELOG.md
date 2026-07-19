@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2
+## 0.2-beta
 
 Dashboard usability release. Requires a database upgrade (open install.php).
 

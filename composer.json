@@ -2,7 +2,7 @@
     "name": "cgee/php-budget",
     "description": "A self-hosted paycheck budgeting app: recurring paychecks allocated to bills, with email reminders.",
     "type": "project",
-    "license": "MIT",
+    "license": "Apache-2.0",
     "require": {
         "php": ">=8.3",
         "ext-pdo_mysql": "*",

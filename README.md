@@ -1,6 +1,10 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.2.
+A simple self-hosted paycheck budgeting app. Version 0.2-beta.
+
+> **Beta:** releases are currently marked beta — the app works and is in
+> daily use, but expect rough edges and back up your database before
+> upgrades.
 
 Money is modeled the way a paycheck-to-paycheck budget actually works:
 recurring paychecks are allocated to bills. The dashboard shows a rolling
@@ -13,7 +17,8 @@ There is no bank sync, but paying a bill goes through a single
 `markPaid(occurrence, user, source)` seam (`source` is `manual` or `sync`),
 so a future sync can plug in without touching the UI.
 
-Download the latest release tarball from the releases directory — it bundles
+Download the latest release tarball from the
+[Releases page](https://github.com/zermus/php-budget/releases) — it bundles
 all dependencies, so Composer is not required on the server.
 
 ## Requirements
@@ -132,4 +137,4 @@ applies migrations. Back up your database first.
 
 ## License
 
-MIT — see LICENSE. © 2026 Cody Gee.
+Apache License 2.0 — see LICENSE. © 2026 Cody Gee.

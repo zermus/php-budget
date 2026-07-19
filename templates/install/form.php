@@ -20,7 +20,7 @@
         </div>
         <div class="field checkbox-field">
             <input type="checkbox" id="seedBudget" name="seedBudget" value="1" <?= isset($old['action']) && empty($old['seedBudget']) ? '' : 'checked' ?>>
-            <label for="seedBudget">Seed my starter budget (biweekly $3,200 schedule with nine bills in two alternating paycheck phases — edit or delete them later under Bills)</label>
+            <label for="seedBudget">Seed an example starter budget (biweekly $2,500 schedule with bills in two alternating paycheck phases — edit or delete them later under Bills)</label>
         </div>
         <button type="submit" class="btn primary">Install</button>
     </form>
