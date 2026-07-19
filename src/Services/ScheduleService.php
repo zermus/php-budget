@@ -9,8 +9,21 @@ use DateTimeImmutable;
 
 final class ScheduleService
 {
-    /** Forward window, in days, that paychecks and occurrences cover. */
+    /** Default forward window, in days, that paychecks and occurrences cover. */
     public const WINDOW_DAYS = 90;
+
+    /** Dashboard sort options for the bills within a paycheck card. */
+    public const SORT_OPTIONS = ['amount_desc', 'amount_asc', 'due_date'];
+
+    /**
+     * The user's forward window in days (Settings, clamped to 14–365).
+     *
+     * @param array<string, mixed> $settings
+     */
+    public static function windowDays(array $settings): int
+    {
+        return max(14, min(365, (int) ($settings['window_days'] ?? self::WINDOW_DAYS)));
+    }
 
     /**
      * Pure pay-date engine: every pay date in [$from, $to] for a schedule.
@@ -89,7 +102,7 @@ final class ScheduleService
 
         $today = new DateTimeImmutable('today');
         $from = $today->modify('first day of this month');
-        $to = $today->modify('+' . self::WINDOW_DAYS . ' days');
+        $to = $today->modify('+' . self::windowDays($settings) . ' days');
 
         $payDates = self::payDates($settings, $from, $to);
         if ($payDates === []) {

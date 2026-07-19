@@ -13,7 +13,7 @@ $isWave = !empty($paycheck['is_wave']);
             <?php if ($isWave): ?><span class="badge wave">Wave</span><?php endif; ?>
         </span>
         <span class="paycheck-income">
-            Income: $<span class="amount editable pay-amount" title="Double-click to edit"><?= e(money((string) $paycheck['amount'])) ?></span>
+            Income: $<span class="amount editable pay-amount" title="Click to edit"><?= e(money((string) $paycheck['amount'])) ?></span>
         </span>
     </div>
 
@@ -21,6 +21,7 @@ $isWave = !empty($paycheck['is_wave']);
         <div class="empty-note">No bills allocated<?= $isWave ? ' — extra check' : '' ?>.</div>
     <?php endif; ?>
 
+    <div class="occ-list">
     <?php foreach ($rows as $row): ?>
         <?php
         $classes = ['occ-row'];
@@ -31,6 +32,8 @@ $isWave = !empty($paycheck['is_wave']);
             $classes[] = 'overdue';
         }
         $isSplit = (int) $row['alloc_count'] > 1;
+        // Paying from a check that lands after the due date = paying late.
+        $isLate = empty($row['paid']) && $row['due_date'] < (string) $paycheck['pay_date'];
         ?>
         <div class="<?= implode(' ', $classes) ?>" data-occurrence-id="<?= (int) $row['occurrence_id'] ?>">
             <input type="checkbox" class="occ-paid" <?= !empty($row['paid']) ? 'checked' : '' ?>
@@ -38,14 +41,15 @@ $isWave = !empty($paycheck['is_wave']);
             <span class="occ-name">
                 <a href="<?= e(url('/allocations/edit?occurrence_id=' . (int) $row['occurrence_id'])) ?>"
                    title="Reassign or split"><?= e($row['bill_name']) ?></a>
-                <small class="empty-note">due <?= e(short_date((string) $row['due_date'])) ?></small>
+                <small class="due-note<?= $isLate ? ' late' : '' ?>"<?= $isLate ? ' title="This paycheck lands after the due date"' : '' ?>>due <?= e(short_date((string) $row['due_date'])) ?></small>
                 <?php if ($isSplit): ?>
                     <span class="split-tag" title="Split across paychecks — this check pays $<?= e(money((string) $row['alloc_amount'])) ?> of $<?= e(money((string) $row['occ_amount'])) ?>">split</span>
                 <?php endif; ?>
             </span>
-            <span class="occ-amount<?= $isSplit ? '' : ' editable' ?>"<?= $isSplit ? '' : ' title="Double-click to edit"' ?>>$<span class="amount"><?= e(money((string) $row['alloc_amount'])) ?></span></span>
+            <span class="occ-amount<?= $isSplit ? '' : ' editable' ?>"<?= $isSplit ? '' : ' title="Click to edit"' ?>>$<span class="amount"><?= e(money((string) $row['alloc_amount'])) ?></span></span>
         </div>
     <?php endforeach; ?>
+    </div>
 
     <div class="paycheck-totals">
         <div><span>Bills</span> <span class="amount bills-total">$<?= e(money((string) $billsTotal)) ?></span></div>

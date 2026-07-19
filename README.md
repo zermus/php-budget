@@ -1,11 +1,11 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.1.
+A simple self-hosted paycheck budgeting app. Version 0.2.
 
 Money is modeled the way a paycheck-to-paycheck budget actually works:
 recurring paychecks are allocated to bills. The dashboard shows a rolling
-~90-day window of upcoming paychecks, what each one pays, and what's left
-over. Bills get a paid checkbox, nightly email reminders cover anything due
+window of upcoming paychecks (14–365 days ahead, your choice; default 90),
+what each one pays, and what's left over. Bills get a paid checkbox, nightly email reminders cover anything due
 soon or overdue, and a third biweekly check landing in one calendar month is
 flagged with a "Wave" badge — the extra check of a three-paycheck month.
 

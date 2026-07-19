@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2
+
+Dashboard usability release. Requires a database upgrade (open install.php).
+
+### Functionality
+
+- Configurable dashboard window: look ahead 14–365 days (Settings; default
+  90). The dashboard paginates at 9 paycheck cards per page, and long bill
+  lists scroll inside their card.
+- Bills within each paycheck card can be ordered largest-first (default),
+  smallest-first, or by due date; the choice is remembered.
+- A bill allocated to a paycheck that lands after its due date shows its
+  due date in red.
+- Amounts are edited with a single click (was double-click).
+
 ## 0.1
 
 Initial release.

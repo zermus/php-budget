@@ -24,7 +24,7 @@ final class OccurrenceService
 
         $today = new DateTimeImmutable('today');
         $from = $today->modify('first day of this month');
-        $to = $today->modify('+' . ScheduleService::WINDOW_DAYS . ' days');
+        $to = $today->modify('+' . ScheduleService::windowDays($settings) . ' days');
 
         $bills = Database::pdo()->prepare(
             'SELECT * FROM bills WHERE user_id = ? AND active = 1'

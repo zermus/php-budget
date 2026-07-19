@@ -94,9 +94,10 @@ final class AllocationController
     /** @return list<array<string, mixed>> */
     private function windowPaychecks(int $userId): array
     {
+        $settings = ScheduleService::userSettings($userId) ?? [];
         $today = new DateTimeImmutable('today');
         $from = $today->modify('first day of this month')->format('Y-m-d');
-        $to = $today->modify('+' . ScheduleService::WINDOW_DAYS . ' days')->format('Y-m-d');
+        $to = $today->modify('+' . ScheduleService::windowDays($settings) . ' days')->format('Y-m-d');
 
         $stmt = Database::pdo()->prepare(
             'SELECT * FROM paychecks

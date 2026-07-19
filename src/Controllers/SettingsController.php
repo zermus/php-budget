@@ -97,6 +97,11 @@ final class SettingsController
             $this->fail('Reminder lead days must be between 0 and 30.');
         }
 
+        $windowDays = input_int('windowDays');
+        if ($windowDays < 14 || $windowDays > 365) {
+            $this->fail('The dashboard window must be between 14 and 365 days.');
+        }
+
         $smtpHost = input_string('smtpHost');
         if ($smtpHost !== '' && !preg_match('/^[A-Za-z0-9.\-\[\]:]+$/', $smtpHost)) {
             $this->fail('SMTP host must be a hostname or IP, optionally with :port.');
@@ -106,7 +111,7 @@ final class SettingsController
         $pdo->prepare(
             'UPDATE user_settings
              SET schedule_type = ?, anchor_date = ?, days_of_month = ?, day_of_month = ?,
-                 default_income = ?, reminder_lead_days = ?, smtp_host = ?
+                 default_income = ?, reminder_lead_days = ?, window_days = ?, smtp_host = ?
              WHERE user_id = ?'
         )->execute([
             $type,
@@ -115,6 +120,7 @@ final class SettingsController
             $dayOfMonth,
             $income,
             $leadDays,
+            $windowDays,
             $smtpHost !== '' ? $smtpHost : null,
             $userId,
         ]);

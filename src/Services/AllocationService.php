@@ -20,8 +20,9 @@ final class AllocationService
     {
         $pdo = Database::pdo();
 
+        $settings = ScheduleService::userSettings($userId) ?? [];
         $to = (new DateTimeImmutable('today'))
-            ->modify('+' . ScheduleService::WINDOW_DAYS . ' days')
+            ->modify('+' . ScheduleService::windowDays($settings) . ' days')
             ->format('Y-m-d');
 
         $stmt = $pdo->prepare(

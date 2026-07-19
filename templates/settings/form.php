@@ -46,6 +46,13 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
                    value="<?= e((string) ($settings['default_income'] ?? '0.00')) ?>">
         </div>
 
+        <h3>Dashboard</h3>
+        <div class="field">
+            <label for="windowDays">Look ahead this many days (14&ndash;365; 9 paychecks per page):</label>
+            <input type="number" id="windowDays" name="windowDays" min="14" max="365"
+                   value="<?= e((string) ($settings['window_days'] ?? 90)) ?>">
+        </div>
+
         <h3>Reminders</h3>
         <div class="field">
             <label for="reminderLeadDays">Email me this many days before a bill is due:</label>

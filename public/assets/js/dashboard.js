@@ -82,8 +82,19 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Double-click amounts to edit.
-    root.addEventListener('dblclick', function (event) {
+    // Sort selector: reload with the choice; the server persists it.
+    var sortSelect = document.getElementById('sortSelect');
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function () {
+            var target = new URL(window.location.href);
+            target.searchParams.set('sort', sortSelect.value);
+            target.searchParams.delete('page');
+            window.location.href = target.toString();
+        });
+    }
+
+    // Click amounts to edit.
+    root.addEventListener('click', function (event) {
         var payAmount = event.target.closest('.pay-amount.editable');
         if (payAmount) {
             var card = payAmount.closest('.paycheck-card');

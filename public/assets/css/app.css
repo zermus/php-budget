@@ -167,6 +167,12 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 }
 .badge.wave { background: #2c3f5e; color: #9ec3ff; }
 
+.occ-list {
+    max-height: 340px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
 .occ-row {
     display: flex;
     align-items: center;
@@ -183,6 +189,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
     color: var(--muted);
 }
 .occ-row .split-tag { font-size: 12px; color: var(--warn); }
+.occ-row .due-note { color: var(--muted); font-style: italic; }
+.occ-row .due-note.late { color: var(--danger); font-weight: 600; }
 .occ-row.overdue .occ-amount, .occ-row.overdue .occ-name { color: var(--danger); }
 .occ-row.overdue.paid .occ-name, .occ-row.overdue.paid .occ-amount { color: var(--muted); }
 
@@ -198,6 +206,17 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 .remaining-neg { color: var(--danger); font-weight: 600; }
 
 .empty-note { color: var(--muted); font-style: italic; padding: 6px 0; }
+
+.dash-tools { display: flex; align-items: center; gap: 10px; }
+.dash-tools select { width: auto; padding: 5px 8px; font-size: 14px; }
+
+.pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin: 20px 0;
+}
 
 /* --- Tables (bills list, allocations) ------------------------------------- */
 

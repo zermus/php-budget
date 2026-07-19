@@ -15,6 +15,9 @@ use DateTimeImmutable;
 
 final class DashboardController
 {
+    /** Paycheck cards per page (3 columns x 3 rows). */
+    private const PER_PAGE = 9;
+
     public function index(): void
     {
         $user = Auth::requireLogin();
@@ -27,9 +30,20 @@ final class DashboardController
         AllocationService::autoAllocate($userId);
 
         $pdo = Database::pdo();
+        $settings = ScheduleService::userSettings($userId) ?? [];
+
+        // A sort choice on the query string is persisted for next time.
+        $sort = (string) ($settings['dashboard_sort'] ?? 'amount_desc');
+        $sortParam = input_string('sort', $_GET);
+        if ($sortParam !== '' && in_array($sortParam, ScheduleService::SORT_OPTIONS, true) && $sortParam !== $sort) {
+            $pdo->prepare('UPDATE user_settings SET dashboard_sort = ? WHERE user_id = ?')
+                ->execute([$sortParam, $userId]);
+            $sort = $sortParam;
+        }
+
         $today = new DateTimeImmutable('today');
         $todayStr = $today->format('Y-m-d');
-        $endStr = $today->modify('+' . ScheduleService::WINDOW_DAYS . ' days')->format('Y-m-d');
+        $endStr = $today->modify('+' . ScheduleService::windowDays($settings) . ' days')->format('Y-m-d');
 
         // Window starts at the paycheck covering today (latest pay_date <=
         // today), so the current period's bills stay visible.
@@ -46,6 +60,11 @@ final class DashboardController
         );
         $stmt->execute([$userId, $startStr, $endStr]);
         $paychecks = $stmt->fetchAll();
+
+        // Paginate: PER_PAGE cards per page, soonest first.
+        $totalPages = max(1, (int) ceil(count($paychecks) / self::PER_PAGE));
+        $page = max(1, min($totalPages, input_int('page', $_GET) ?: 1));
+        $paychecks = array_slice($paychecks, ($page - 1) * self::PER_PAGE, self::PER_PAGE);
 
         $rowsByPaycheck = [];
         if ($paychecks !== []) {
@@ -68,6 +87,15 @@ final class DashboardController
             foreach ($stmt->fetchAll() as $row) {
                 $rowsByPaycheck[(int) $row['paycheck_id']][] = $row;
             }
+
+            foreach ($rowsByPaycheck as &$rows) {
+                usort($rows, match ($sort) {
+                    'amount_asc' => static fn (array $a, array $b): int => (float) $a['alloc_amount'] <=> (float) $b['alloc_amount'],
+                    'due_date'   => static fn (array $a, array $b): int => [$a['due_date'], $a['bill_name']] <=> [$b['due_date'], $b['bill_name']],
+                    default      => static fn (array $a, array $b): int => (float) $b['alloc_amount'] <=> (float) $a['alloc_amount'],
+                });
+            }
+            unset($rows);
         }
 
         // The card covering today: the last one with pay_date <= today.
@@ -84,6 +112,9 @@ final class DashboardController
             'rowsByPaycheck' => $rowsByPaycheck,
             'currentId'      => $currentId,
             'today'          => $todayStr,
+            'sort'           => $sort,
+            'page'           => $page,
+            'totalPages'     => $totalPages,
             'scripts'        => [asset('js/dashboard.js')],
         ]);
     }

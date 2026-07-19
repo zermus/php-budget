@@ -6,8 +6,8 @@ namespace App;
 
 final class App
 {
-    public const VERSION = '0.1';
-    public const SCHEMA_VERSION = 1;
+    public const VERSION = '0.2';
+    public const SCHEMA_VERSION = 2;
 
     /** @var array<string, mixed> */
     private static array $config = [];
