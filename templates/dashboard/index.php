@@ -6,7 +6,7 @@
     <div class="page-head">
         <h1>Upcoming Paychecks</h1>
         <div class="dash-tools">
-            <span class="empty-note">Click an amount to edit it.</span>
+            <span class="empty-note">Click on bill item to edit.</span>
             <label for="sortSelect" class="empty-note">Order bills:</label>
             <select id="sortSelect">
                 <option value="amount_desc" <?= $sort === 'amount_desc' ? 'selected' : '' ?>>Largest first</option>
