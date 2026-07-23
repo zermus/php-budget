@@ -13,8 +13,14 @@
     <nav class="topnav">
         <span class="brand">Budget</span>
         <a href="<?= e(url('/dashboard')) ?>">Dashboard</a>
+        <?php if (Auth::isAdmin()): ?>
         <a href="<?= e(url('/bills')) ?>">Bills</a>
+        <a href="<?= e(url('/users')) ?>">Users</a>
+        <?php endif; ?>
         <a href="<?= e(url('/settings')) ?>">Settings</a>
+        <?php if (!Auth::isAdmin()): ?>
+        <span class="badge role-<?= e(Auth::role()) ?>"><?= Auth::role() === 'payer' ? 'Bill payer' : 'Read only' ?></span>
+        <?php endif; ?>
         <form action="<?= e(url('/logout')) ?>" method="post" class="inline logout">
             <?= Csrf::field() ?>
             <button type="submit" class="btn link">Logout</button>

@@ -144,11 +144,14 @@ final class AllocationService
     }
 
     /**
-     * Allocation totals for a set of paychecks, for AJAX responses:
-     * paycheck_id => [paycheck_id, bills_total, remaining].
+     * Allocation totals for a set of paychecks, for AJAX responses.
+     *
+     * bills_total counts only UNPAID allocations, so the Bills line counts
+     * down as bills are ticked off; remaining stays income minus everything
+     * allocated (paid or not), so it still reflects real leftover money.
      *
      * @param list<int> $paycheckIds
-     * @return array<int, array{paycheck_id: int, bills_total: string, remaining: string}>
+     * @return array<int, array{paycheck_id: int, bills_total: string, paid_total: string, remaining: string}>
      */
     public static function paycheckTotals(int $userId, array $paycheckIds): array
     {
@@ -158,9 +161,13 @@ final class AllocationService
 
         $placeholders = implode(',', array_fill(0, count($paycheckIds), '?'));
         $stmt = Database::pdo()->prepare(
-            "SELECT p.id, p.amount, COALESCE(SUM(a.amount), 0) AS bills_total
+            "SELECT p.id, p.amount,
+                    COALESCE(SUM(a.amount), 0) AS allocated_total,
+                    COALESCE(SUM(CASE WHEN o.paid = 0 THEN a.amount ELSE 0 END), 0) AS unpaid_total,
+                    COALESCE(SUM(CASE WHEN o.paid = 1 THEN a.amount ELSE 0 END), 0) AS paid_total
              FROM paychecks p
              LEFT JOIN allocations a ON a.paycheck_id = p.id
+             LEFT JOIN bill_occurrences o ON o.id = a.occurrence_id
              WHERE p.user_id = ? AND p.id IN ($placeholders)
              GROUP BY p.id, p.amount"
         );
@@ -170,8 +177,9 @@ final class AllocationService
         foreach ($stmt->fetchAll() as $row) {
             $totals[(int) $row['id']] = [
                 'paycheck_id' => (int) $row['id'],
-                'bills_total' => number_format((float) $row['bills_total'], 2, '.', ''),
-                'remaining'   => number_format((float) $row['amount'] - (float) $row['bills_total'], 2, '.', ''),
+                'bills_total' => number_format((float) $row['unpaid_total'], 2, '.', ''),
+                'paid_total'  => number_format((float) $row['paid_total'], 2, '.', ''),
+                'remaining'   => number_format((float) $row['amount'] - (float) $row['allocated_total'], 2, '.', ''),
             ];
         }
 

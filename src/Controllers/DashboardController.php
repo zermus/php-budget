@@ -20,8 +20,8 @@ final class DashboardController
 
     public function index(): void
     {
-        $user = Auth::requireLogin();
-        $userId = (int) $user['id'];
+        Auth::requireLogin();
+        $userId = Auth::dataUserId();
 
         // Lazy generation: everything is idempotent and cheap at this scale,
         // so the window is always fresh exactly when it is viewed.
@@ -32,12 +32,21 @@ final class DashboardController
         $pdo = Database::pdo();
         $settings = ScheduleService::userSettings($userId) ?? [];
 
-        // A sort choice on the query string is persisted for next time.
-        $sort = (string) ($settings['dashboard_sort'] ?? 'amount_desc');
+        // A sort choice on the query string is persisted for next time —
+        // to the account settings for the admin, to the session for
+        // sub-users so they cannot rewrite the owner's default.
+        $sort = Auth::isAdmin()
+            ? (string) ($settings['dashboard_sort'] ?? 'amount_desc')
+            : (string) ($_SESSION['dashboard_sort'] ?? $settings['dashboard_sort'] ?? 'amount_desc');
+
         $sortParam = input_string('sort', $_GET);
         if ($sortParam !== '' && in_array($sortParam, ScheduleService::SORT_OPTIONS, true) && $sortParam !== $sort) {
-            $pdo->prepare('UPDATE user_settings SET dashboard_sort = ? WHERE user_id = ?')
-                ->execute([$sortParam, $userId]);
+            if (Auth::isAdmin()) {
+                $pdo->prepare('UPDATE user_settings SET dashboard_sort = ? WHERE user_id = ?')
+                    ->execute([$sortParam, $userId]);
+            } else {
+                $_SESSION['dashboard_sort'] = $sortParam;
+            }
             $sort = $sortParam;
         }
 
@@ -124,8 +133,9 @@ final class DashboardController
      */
     public function updateAmount(): void
     {
-        $user = Auth::requireLoginJson();
+        Auth::requireAdminJson();
         Csrf::requireJson();
+        $userId = Auth::dataUserId();
 
         $paycheckId = input_int('id');
         $amount = input_decimal('amount');
@@ -136,9 +146,9 @@ final class DashboardController
         $stmt = Database::pdo()->prepare(
             'UPDATE paychecks SET amount = ? WHERE id = ? AND user_id = ?'
         );
-        $stmt->execute([$amount, $paycheckId, (int) $user['id']]);
+        $stmt->execute([$amount, $paycheckId, $userId]);
 
-        $totals = AllocationService::paycheckTotals((int) $user['id'], [$paycheckId]);
+        $totals = AllocationService::paycheckTotals($userId, [$paycheckId]);
 
         json_response(['success' => true, 'totals' => array_values($totals)]);
     }

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3-beta
+
+Shared households, SMTP testing, and paid-aware totals. Requires a database
+upgrade (open install.php).
+
+### Functionality
+
+- **Users:** the administrator can add household users who share the same
+  budget — a **bill payer** who can tick bills paid, and a **read-only**
+  user who can only look. Bills, the pay schedule, allocations, amounts,
+  and user management stay with the administrator. Each user has their own
+  login and can change their own password; the admin can reset it.
+- **Send test email** button in Settings, which uses the SMTP relay
+  currently typed in the form (saved or not) and reports the actual failure
+  reason (e.g. "Could not connect to SMTP host") instead of failing
+  silently. SMTP now times out after 10 seconds rather than hanging.
+- Reminder emails have a per-user on/off switch, so a payer can receive the
+  nightly summary while a read-only user does not.
+- Ticking a bill paid now deducts it from that paycheck's **Bills** total,
+  which counts down to $0 as the check is paid out, with a "· $X paid"
+  note. **Remaining** is unchanged — it still nets out every allocated
+  bill, paid or not, so it keeps showing real leftover money.
+
 ## 0.2-beta
 
 Dashboard usability release. Requires a database upgrade (open install.php).

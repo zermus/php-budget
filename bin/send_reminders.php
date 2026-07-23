@@ -28,15 +28,23 @@ $pdo = Database::pdo();
 $today = new DateTimeImmutable('today');
 $todayStr = $today->format('Y-m-d');
 
-$users = $pdo->query(
-    'SELECT u.id, u.email, s.reminder_lead_days, s.smtp_host
+// One pass per budget owner; sub-users share the owner's schedule and bills.
+$owners = $pdo->query(
+    'SELECT u.id, u.email, u.receive_reminders, s.reminder_lead_days, s.smtp_host
      FROM users u
-     INNER JOIN user_settings s ON s.user_id = u.id'
+     INNER JOIN user_settings s ON s.user_id = u.id
+     WHERE u.owner_id IS NULL'
 )->fetchAll();
+
+$recipientStmt = $pdo->prepare(
+    'SELECT email FROM users
+     WHERE owner_id = ? AND receive_reminders = 1
+     ORDER BY email'
+);
 
 $sent = 0;
 
-foreach ($users as $user) {
+foreach ($owners as $user) {
     $userId = (int) $user['id'];
 
     // Keep the window fresh even if the user hasn't opened the dashboard.
@@ -101,11 +109,23 @@ foreach ($users as $user) {
         ? (string) $user['smtp_host']
         : null;
 
-    if (Mailer::send((string) $user['email'], (string) $user['email'], $subject, implode("\n", $lines), $smtpHost)) {
-        $sent++;
-    } else {
-        fwrite(STDERR, "Failed to send reminder to {$user['email']}\n");
+    // The owner plus any sub-user who has reminders switched on.
+    $recipients = [];
+    if (!empty($user['receive_reminders'])) {
+        $recipients[] = (string) $user['email'];
+    }
+    $recipientStmt->execute([$userId]);
+    foreach ($recipientStmt->fetchAll(PDO::FETCH_COLUMN) as $email) {
+        $recipients[] = (string) $email;
+    }
+
+    foreach ($recipients as $email) {
+        if (Mailer::send($email, $email, $subject, implode("\n", $lines), $smtpHost)) {
+            $sent++;
+        } else {
+            fwrite(STDERR, "Failed to send reminder to {$email}: " . (Mailer::lastError() ?? 'unknown error') . "\n");
+        }
     }
 }
 
-echo 'Reminders sent: ' . $sent . ' of ' . count($users) . " user(s) checked.\n";
+echo 'Reminders sent: ' . $sent . ' message(s) across ' . count($owners) . " budget(s) checked.\n";

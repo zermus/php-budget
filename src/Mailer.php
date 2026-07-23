@@ -9,6 +9,20 @@ use PHPMailer\PHPMailer\PHPMailer;
 
 final class Mailer
 {
+    /** Connect/auth timeout for SMTP, so a dead relay can't hang a request. */
+    private const SMTP_TIMEOUT = 10;
+
+    private static ?string $lastError = null;
+
+    /**
+     * Why the last send() failed, for surfacing in the UI (the test-email
+     * button). Null when the last send succeeded.
+     */
+    public static function lastError(): ?string
+    {
+        return self::$lastError;
+    }
+
     /**
      * Send a plain-text email. Returns true on success; failures are logged,
      * never displayed.
@@ -25,6 +39,7 @@ final class Mailer
         string $body,
         ?string $smtpHost = null
     ): bool {
+        self::$lastError = null;
         $transport = (string) App::config('mail.transport', 'smtp');
 
         if ($smtpHost === null && $transport === 'log') {
@@ -34,6 +49,7 @@ final class Mailer
         try {
             $mail = new PHPMailer(true);
             $mail->CharSet = PHPMailer::CHARSET_UTF8;
+            $mail->Timeout = self::SMTP_TIMEOUT;
 
             if ($smtpHost !== null) {
                 $host = $smtpHost;
@@ -75,6 +91,7 @@ final class Mailer
 
             return $mail->send();
         } catch (MailException $e) {
+            self::$lastError = trim($e->getMessage());
             error_log('[php-budget] Mail send failed to ' . $to . ': ' . $e->getMessage());
 
             return false;

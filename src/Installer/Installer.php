@@ -41,7 +41,12 @@ final class Installer
             return false;
         }
 
-        return (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn() > 0;
+        // Only an account owner counts — sub-users can't exist without one.
+        $sql = $migrator->columnExists('users', 'owner_id')
+            ? 'SELECT COUNT(*) FROM users WHERE owner_id IS NULL'
+            : 'SELECT COUNT(*) FROM users';
+
+        return (int) $pdo->query($sql)->fetchColumn() > 0;
     }
 
     /**
@@ -69,7 +74,11 @@ final class Installer
                 . 'one lowercase letter, one number, and one special character.';
         }
 
-        $stmt = $pdo->prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)');
+        // The first account owns the budget and administers it; any users it
+        // adds later are payer/viewer sub-users pointing back at this row.
+        $stmt = $pdo->prepare(
+            "INSERT INTO users (email, password_hash, role, owner_id) VALUES (?, ?, 'admin', NULL)"
+        );
         $stmt->execute([$email, password_hash($password, PASSWORD_ARGON2ID)]);
         $userId = (int) $pdo->lastInsertId();
 

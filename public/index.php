@@ -10,6 +10,7 @@ use App\Controllers\BillController;
 use App\Controllers\DashboardController;
 use App\Controllers\OccurrenceController;
 use App\Controllers\SettingsController;
+use App\Controllers\UserController;
 use App\Router;
 
 $router = new Router();
@@ -20,6 +21,7 @@ $bills = new BillController();
 $occurrences = new OccurrenceController();
 $allocations = new AllocationController();
 $settings = new SettingsController();
+$users = new UserController();
 
 $router->get('/', static function (): void {
     redirect('/dashboard');
@@ -49,5 +51,13 @@ $router->post('/allocations/edit', [$allocations, 'save']);
 
 $router->get('/settings', [$settings, 'form']);
 $router->post('/settings', [$settings, 'save']);
+$router->post('/settings/test-email', [$settings, 'testEmail']);
+
+$router->get('/users', [$users, 'index']);
+$router->get('/users/create', [$users, 'createForm']);
+$router->post('/users/create', [$users, 'create']);
+$router->post('/users/update', [$users, 'update']);
+$router->post('/users/password', [$users, 'resetPassword']);
+$router->post('/users/delete', [$users, 'delete']);
 
 $router->dispatch();

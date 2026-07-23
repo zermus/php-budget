@@ -1,4 +1,5 @@
 <?php
+use App\Auth;
 use App\Csrf;
 
 $type = (string) ($settings['schedule_type'] ?? 'biweekly');
@@ -6,6 +7,14 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 ?>
 <div class="container narrow">
     <h2>Settings</h2>
+
+    <?php if (!Auth::isAdmin()): ?>
+        <p class="empty-note">
+            You are signed in as a <?= Auth::role() === 'payer' ? 'bill payer' : 'read-only user' ?>
+            on this budget. The pay schedule, bills, and reminders are managed by the account
+            administrator; you can change your own password here.
+        </p>
+    <?php else: ?>
 
     <form method="post" action="<?= e(url('/settings')) ?>">
         <?= Csrf::field() ?>
@@ -71,7 +80,16 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
         <button type="submit" class="btn primary">Save Settings</button>
     </form>
 
+    <form method="post" action="<?= e(url('/settings/test-email')) ?>" id="test-email-form">
+        <?= Csrf::field() ?>
+        <input type="hidden" name="smtpHost" value="">
+        <button type="submit" class="btn">Send test email</button>
+        <span class="empty-note">Sends to <?= e($user['email']) ?> using the relay in the box above,
+            even if you haven't saved it yet.</span>
+    </form>
+
     <hr>
+    <?php endif; ?>
 
     <form method="post" action="<?= e(url('/settings')) ?>">
         <?= Csrf::field() ?>
@@ -98,6 +116,9 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 <script>
 (function () {
     var select = document.getElementById('scheduleType');
+    if (!select) {
+        return; // sub-users see the password form only
+    }
     function toggle() {
         document.querySelectorAll('.schedule-fields').forEach(function (el) {
             el.style.display = el.dataset.type.split(' ').indexOf(select.value) !== -1 ? '' : 'none';
@@ -105,5 +126,11 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
     }
     select.addEventListener('change', toggle);
     toggle();
+
+    // Test the relay currently typed in the settings form, saved or not.
+    var testForm = document.getElementById('test-email-form');
+    testForm.addEventListener('submit', function () {
+        testForm.smtpHost.value = document.getElementById('smtpHost').value;
+    });
 })();
 </script>

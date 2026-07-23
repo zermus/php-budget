@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Auth;
 use App\Csrf;
 use App\Database;
+use App\Mailer;
 use App\Services\ScheduleService;
 use App\View;
 use DateTimeImmutable;
@@ -16,7 +17,7 @@ final class SettingsController
     public function form(): void
     {
         $user = Auth::requireLogin();
-        $settings = ScheduleService::userSettings((int) $user['id']) ?? [];
+        $settings = Auth::isAdmin() ? (ScheduleService::userSettings(Auth::dataUserId()) ?? []) : [];
 
         echo View::render('settings/form', [
             'title'    => 'Settings',
@@ -31,6 +32,7 @@ final class SettingsController
         $user = Auth::requireLogin();
         Csrf::require();
 
+        // Anyone may change their own password; the rest is admin-only.
         $action = input_string('action');
         if ($action === 'password') {
             $this->savePassword($user);
@@ -38,13 +40,47 @@ final class SettingsController
             return;
         }
 
+        Auth::requireAdmin();
         $this->saveSettings($user);
+    }
+
+    /**
+     * Send a test email to the signed-in admin using the SMTP host currently
+     * in the form (so a change can be verified before it is saved).
+     */
+    public function testEmail(): void
+    {
+        $user = Auth::requireAdmin();
+        Csrf::require();
+
+        $smtpHost = input_string('smtpHost');
+        $target = $smtpHost !== ''
+            ? 'SMTP relay ' . $smtpHost
+            : 'the server default (' . (string) \App\App::config('mail.transport', 'smtp') . ')';
+
+        $ok = Mailer::send(
+            (string) $user['email'],
+            (string) $user['email'],
+            'php-budget test email',
+            "This is a test message from php-budget.\n\n"
+            . 'Sent via: ' . $target . "\n"
+            . "If you received it, bill reminders will reach you at this address.\n",
+            $smtpHost !== '' ? $smtpHost : null
+        );
+
+        if ($ok) {
+            flash('Test email sent to ' . $user['email'] . ' via ' . $target . '.');
+        } else {
+            flash('Test email failed: ' . (Mailer::lastError() ?? 'unknown error') . '.', 'error');
+        }
+
+        redirect('/settings');
     }
 
     /** @param array<string, mixed> $user */
     private function saveSettings(array $user): void
     {
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
         $old = ScheduleService::userSettings($userId);
         if ($old === null) {
             Database::pdo()->prepare('INSERT INTO user_settings (user_id) VALUES (?)')->execute([$userId]);

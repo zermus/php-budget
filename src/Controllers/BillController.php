@@ -14,12 +14,12 @@ final class BillController
 {
     public function index(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
 
         $stmt = Database::pdo()->prepare(
             'SELECT * FROM bills WHERE user_id = ? ORDER BY active DESC, name'
         );
-        $stmt->execute([(int) $user['id']]);
+        $stmt->execute([Auth::dataUserId()]);
 
         echo View::render('bills/index', [
             'title' => 'Bills',
@@ -29,7 +29,7 @@ final class BillController
 
     public function createForm(): void
     {
-        Auth::requireLogin();
+        Auth::requireAdmin();
 
         echo View::render('bills/form', [
             'title' => 'Add Bill',
@@ -41,7 +41,7 @@ final class BillController
 
     public function create(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
         Csrf::require();
 
         [$fields, $error] = $this->validated();
@@ -61,7 +61,7 @@ final class BillController
              VALUES (?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([
-            (int) $user['id'],
+            Auth::dataUserId(),
             $fields['name'],
             $fields['amount'],
             $fields['type'],
@@ -75,9 +75,9 @@ final class BillController
 
     public function editForm(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
 
-        $bill = $this->userBill(input_int('id', $_GET), (int) $user['id']);
+        $bill = $this->userBill(input_int('id', $_GET), Auth::dataUserId());
         if ($bill === null) {
             flash('Bill not found.', 'error');
             redirect('/bills');
@@ -93,9 +93,9 @@ final class BillController
 
     public function update(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
         Csrf::require();
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
 
         $bill = $this->userBill(input_int('id'), $userId);
         if ($bill === null) {
@@ -146,9 +146,9 @@ final class BillController
 
     public function toggleActive(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
         Csrf::require();
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
 
         $bill = $this->userBill(input_int('id'), $userId);
         if ($bill === null) {
@@ -176,11 +176,11 @@ final class BillController
 
     public function delete(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
         Csrf::require();
 
         $stmt = Database::pdo()->prepare('DELETE FROM bills WHERE id = ? AND user_id = ?');
-        $stmt->execute([input_int('id'), (int) $user['id']]);
+        $stmt->execute([input_int('id'), Auth::dataUserId()]);
 
         flash($stmt->rowCount() > 0 ? 'Bill deleted, including its history.' : 'Bill not found.', $stmt->rowCount() > 0 ? 'success' : 'error');
         redirect('/bills');

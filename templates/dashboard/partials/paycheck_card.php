@@ -1,10 +1,21 @@
 <?php
-$billsTotal = 0.0;
+use App\Auth;
+
+// Bills counts what this check still owes; remaining nets out everything
+// allocated to it, paid or not.
+$allocatedTotal = 0.0;
+$paidTotal = 0.0;
 foreach ($rows as $row) {
-    $billsTotal += (float) $row['alloc_amount'];
+    $allocatedTotal += (float) $row['alloc_amount'];
+    if (!empty($row['paid'])) {
+        $paidTotal += (float) $row['alloc_amount'];
+    }
 }
-$remaining = (float) $paycheck['amount'] - $billsTotal;
+$billsTotal = $allocatedTotal - $paidTotal;
+$remaining = (float) $paycheck['amount'] - $allocatedTotal;
 $isWave = !empty($paycheck['is_wave']);
+$canPay = Auth::canPay();
+$isAdmin = Auth::isAdmin();
 ?>
 <div class="paycheck-card<?= $isCurrent ? ' current' : '' ?>" data-paycheck-id="<?= (int) $paycheck['id'] ?>">
     <div class="paycheck-head">
@@ -13,7 +24,7 @@ $isWave = !empty($paycheck['is_wave']);
             <?php if ($isWave): ?><span class="badge wave">Wave</span><?php endif; ?>
         </span>
         <span class="paycheck-income">
-            Income: $<span class="amount editable pay-amount" title="Click to edit"><?= e(money((string) $paycheck['amount'])) ?></span>
+            Income: $<span class="amount pay-amount<?= $isAdmin ? ' editable' : '' ?>"<?= $isAdmin ? ' title="Click to edit"' : '' ?>><?= e(money((string) $paycheck['amount'])) ?></span>
         </span>
     </div>
 
@@ -37,22 +48,31 @@ $isWave = !empty($paycheck['is_wave']);
         ?>
         <div class="<?= implode(' ', $classes) ?>" data-occurrence-id="<?= (int) $row['occurrence_id'] ?>">
             <input type="checkbox" class="occ-paid" <?= !empty($row['paid']) ? 'checked' : '' ?>
-                   title="Mark paid / unpaid">
+                   <?= $canPay ? '' : 'disabled' ?>
+                   title="<?= $canPay ? 'Mark paid / unpaid' : 'Your account is read-only' ?>">
             <span class="occ-name">
-                <a href="<?= e(url('/allocations/edit?occurrence_id=' . (int) $row['occurrence_id'])) ?>"
-                   title="Reassign or split"><?= e($row['bill_name']) ?></a>
+                <?php if ($isAdmin): ?>
+                    <a href="<?= e(url('/allocations/edit?occurrence_id=' . (int) $row['occurrence_id'])) ?>"
+                       title="Reassign or split"><?= e($row['bill_name']) ?></a>
+                <?php else: ?>
+                    <?= e($row['bill_name']) ?>
+                <?php endif; ?>
                 <small class="due-note<?= $isLate ? ' late' : '' ?>"<?= $isLate ? ' title="This paycheck lands after the due date"' : '' ?>>due <?= e(short_date((string) $row['due_date'])) ?></small>
                 <?php if ($isSplit): ?>
                     <span class="split-tag" title="Split across paychecks — this check pays $<?= e(money((string) $row['alloc_amount'])) ?> of $<?= e(money((string) $row['occ_amount'])) ?>">split</span>
                 <?php endif; ?>
             </span>
-            <span class="occ-amount<?= $isSplit ? '' : ' editable' ?>"<?= $isSplit ? '' : ' title="Click to edit"' ?>>$<span class="amount"><?= e(money((string) $row['alloc_amount'])) ?></span></span>
+            <?php $editable = $isAdmin && !$isSplit; ?>
+            <span class="occ-amount<?= $editable ? ' editable' : '' ?>"<?= $editable ? ' title="Click to edit"' : '' ?>>$<span class="amount"><?= e(money((string) $row['alloc_amount'])) ?></span></span>
         </div>
     <?php endforeach; ?>
     </div>
 
     <div class="paycheck-totals">
-        <div><span>Bills</span> <span class="amount bills-total">$<?= e(money((string) $billsTotal)) ?></span></div>
+        <div>
+            <span>Bills <span class="paid-note"<?= $paidTotal > 0 ? '' : ' hidden' ?>>· $<span class="paid-amount"><?= e(money((string) $paidTotal)) ?></span> paid</span></span>
+            <span class="amount bills-total">$<?= e(money((string) $billsTotal)) ?></span>
+        </div>
         <div>
             <span>Remaining</span>
             <span class="amount remaining <?= $remaining < 0 ? 'remaining-neg' : 'remaining-pos' ?>">$<?= e(money((string) $remaining)) ?></span>

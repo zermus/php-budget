@@ -16,8 +16,8 @@ final class AllocationController
 {
     public function editForm(): void
     {
-        $user = Auth::requireLogin();
-        $userId = (int) $user['id'];
+        Auth::requireAdmin();
+        $userId = Auth::dataUserId();
 
         $occurrence = $this->userOccurrence(input_int('occurrence_id', $_GET), $userId);
         if ($occurrence === null) {
@@ -35,9 +35,9 @@ final class AllocationController
 
     public function save(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
         Csrf::require();
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
 
         $occurrence = $this->userOccurrence(input_int('occurrence_id'), $userId);
         if ($occurrence === null) {

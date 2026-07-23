@@ -18,12 +18,12 @@ final class OccurrenceController
      */
     public function setPaid(): void
     {
-        $user = Auth::requireLoginJson();
+        Auth::requirePayJson();
         Csrf::requireJson();
 
         $occurrenceId = input_int('id');
         $paid = !empty($_POST['paid']);
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
 
         $ok = $paid
             ? OccurrenceService::markPaid($occurrenceId, $userId, 'manual')
@@ -33,7 +33,13 @@ final class OccurrenceController
             json_response(['success' => false, 'error' => 'Bill occurrence not found.'], 404);
         }
 
-        json_response(['success' => true, 'paid' => $paid]);
+        json_response([
+            'success' => true,
+            'paid'    => $paid,
+            'totals'  => array_values(
+                AllocationService::paycheckTotals($userId, self::paycheckIdsFor($occurrenceId, $userId))
+            ),
+        ]);
     }
 
     /**
@@ -43,12 +49,12 @@ final class OccurrenceController
      */
     public function updateAmount(): void
     {
-        $user = Auth::requireLoginJson();
+        Auth::requireAdminJson();
         Csrf::requireJson();
 
         $occurrenceId = input_int('id');
         $amount = input_decimal('amount');
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
 
         if ($occurrenceId < 1 || $amount === null) {
             json_response(['success' => false, 'error' => 'Enter a valid dollar amount.'], 422);
@@ -62,16 +68,29 @@ final class OccurrenceController
 
         AllocationService::syncSingleAllocation($occurrenceId, $userId, $amount);
 
-        // Refresh totals for every paycheck this occurrence touches.
-        $stmt = $pdo->prepare('SELECT paycheck_id FROM allocations WHERE occurrence_id = ? AND user_id = ?');
-        $stmt->execute([$occurrenceId, $userId]);
-        $paycheckIds = array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
-
         json_response([
             'success' => true,
             'amount'  => $amount,
-            'totals'  => array_values(AllocationService::paycheckTotals($userId, $paycheckIds)),
+            'totals'  => array_values(
+                AllocationService::paycheckTotals($userId, self::paycheckIdsFor($occurrenceId, $userId))
+            ),
         ]);
+    }
+
+    /**
+     * Every paycheck an occurrence is allocated against (more than one when
+     * it is split), so the dashboard can refresh each affected card.
+     *
+     * @return list<int>
+     */
+    private static function paycheckIdsFor(int $occurrenceId, int $userId): array
+    {
+        $stmt = Database::pdo()->prepare(
+            'SELECT paycheck_id FROM allocations WHERE occurrence_id = ? AND user_id = ?'
+        );
+        $stmt->execute([$occurrenceId, $userId]);
+
+        return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
     }
 
     /**
@@ -81,11 +100,11 @@ final class OccurrenceController
      */
     public function skip(): void
     {
-        $user = Auth::requireLogin();
+        Auth::requireAdmin();
         Csrf::require();
 
         $occurrenceId = input_int('id');
-        $userId = (int) $user['id'];
+        $userId = Auth::dataUserId();
 
         $stmt = Database::pdo()->prepare(
             'UPDATE bill_occurrences SET skipped = 1 WHERE id = ? AND user_id = ? AND paid = 0'

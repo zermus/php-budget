@@ -83,4 +83,74 @@ final class Auth
 
         return $user;
     }
+
+    // --- Roles and household access -------------------------------------
+
+    /**
+     * The user whose budget the current user works with: their own if they
+     * are an account owner, otherwise the owner who invited them. EVERY
+     * budget query scopes to this id, never to the logged-in id.
+     */
+    public static function dataUserId(): int
+    {
+        $user = self::requireLogin();
+
+        return (int) ($user['owner_id'] ?? 0) ?: (int) $user['id'];
+    }
+
+    public static function role(): string
+    {
+        $user = self::user();
+
+        return (string) ($user['role'] ?? 'viewer');
+    }
+
+    public static function isAdmin(): bool
+    {
+        return self::role() === 'admin';
+    }
+
+    /** Admins and payers may tick the paid checkboxes. */
+    public static function canPay(): bool
+    {
+        return in_array(self::role(), ['admin', 'payer'], true);
+    }
+
+    /**
+     * Require an admin (bills, schedule settings, allocations, users).
+     *
+     * @return array<string, mixed>
+     */
+    public static function requireAdmin(): array
+    {
+        $user = self::requireLogin();
+        if (!self::isAdmin()) {
+            flash('That area is only available to the account administrator.', 'error');
+            redirect('/dashboard');
+        }
+
+        return $user;
+    }
+
+    /** @return array<string, mixed> */
+    public static function requireAdminJson(): array
+    {
+        $user = self::requireLoginJson();
+        if (!self::isAdmin()) {
+            json_response(['success' => false, 'error' => 'Administrator access required.'], 403);
+        }
+
+        return $user;
+    }
+
+    /** @return array<string, mixed> */
+    public static function requirePayJson(): array
+    {
+        $user = self::requireLoginJson();
+        if (!self::canPay()) {
+            json_response(['success' => false, 'error' => 'Your account is read-only.'], 403);
+        }
+
+        return $user;
+    }
 }

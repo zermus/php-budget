@@ -33,6 +33,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
             card.querySelector('.bills-total').textContent = '$' + fmt(t.bills_total);
+
+            var paidNote = card.querySelector('.paid-note');
+            if (paidNote) {
+                paidNote.querySelector('.paid-amount').textContent = fmt(t.paid_total);
+                paidNote.hidden = Number(t.paid_total) === 0;
+            }
+
             var remaining = card.querySelector('.remaining');
             remaining.textContent = '$' + fmt(t.remaining);
             remaining.classList.toggle('remaining-neg', Number(t.remaining) < 0);
@@ -76,6 +83,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     r.classList.toggle('paid', data.paid);
                     r.querySelector('.occ-paid').checked = data.paid;
                 });
+            applyTotals(data.totals);
         }).catch(function () {
             checkbox.checked = !checkbox.checked;
             window.alert('Could not reach the server.');

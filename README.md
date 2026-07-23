@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.2-beta.
+A simple self-hosted paycheck budgeting app. Version 0.3-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -109,8 +109,27 @@ next day's summary.
 - `mail` — PHP's `mail()`.
 - `log` — append messages to `mail.log_path` instead of sending (testing).
 
-Each user can also set a personal SMTP relay (`host` or `host:port`, no
-auth) in Settings; the reminder cron uses it for that user's email.
+The administrator can also set a household SMTP relay (`host` or
+`host:port`, no auth) in Settings; the reminder cron uses it for that
+budget's emails. **Send test email** in Settings verifies the relay
+currently in the box — before you save it — and reports the real failure
+reason if it can't connect.
+
+## Users
+
+The account created by the installer is the **administrator**: it owns the
+budget and manages bills, the pay schedule, allocations, and users. From
+**Users**, the administrator can add other people who share that same budget:
+
+| Role | Can do |
+|---|---|
+| Administrator | Everything: bills, schedule, allocations, amounts, users |
+| Bill payer | View the dashboard and tick bills paid |
+| Read only | View the dashboard only |
+
+Each user signs in with their own email and password and can change their own
+password under Settings. Reminder emails are per-user: switch them on or off
+for anyone in the household from the Users page.
 
 ## Pay schedules and bills
 
