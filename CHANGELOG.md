@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4-beta
+
+Email moves into the app. Requires a database upgrade (open install.php).
+
+### Fixed
+
+- **SMTP "None" now means none.** PHPMailer opportunistically upgraded to
+  STARTTLS whenever a relay advertised it, so a local relay with broken or
+  self-signed TLS failed with "STARTTLS command failed" even though
+  encryption was set to none. Encryption "None" now disables the automatic
+  upgrade outright.
+- **Stale CSS/JS after an upgrade.** Asset URLs carry the app version, so
+  browsers pick up new styles and scripts immediately instead of serving a
+  cached copy. (If the dashboard totals did not update live when ticking a
+  bill paid in 0.3, this was why.)
+- Save Settings and Send test email no longer crowd each other.
+
+### Functionality
+
+- **Email is configured in Settings**, not config.php: transport (SMTP relay
+  / PHP mail() / log to file), from address and name, and SMTP host, port,
+  encryption, username, and password. Send test email uses whatever is in
+  the form, saved or not. Leaving the SMTP password blank keeps the stored
+  one.
+- config.php's `mail` block is now an optional fallback for fields left
+  blank, so existing installs keep working untouched; new installs can drop
+  it entirely except for `log_path`.
+- An SMTP host previously saved as `host:port` is split into the new host
+  and port fields automatically during the upgrade.
+
 ## 0.3-beta
 
 Shared households, SMTP testing, and paid-aware totals. Requires a database

@@ -68,6 +68,9 @@ pre {
 /* --- Forms -------------------------------------------------------------- */
 
 .field { margin-bottom: 14px; }
+.field.two-up { display: flex; gap: 10px; }
+.field.two-up > div { flex: 1; }
+.field.two-up .port-col { flex: 0 0 110px; }
 .field label { display: block; margin-bottom: 4px; color: var(--muted); }
 .checkbox-field { display: flex; gap: 8px; align-items: flex-start; }
 .checkbox-field label { color: var(--text); }
@@ -180,7 +183,16 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 
 input[type="checkbox"]:disabled { opacity: .45; cursor: not-allowed; }
 
-#test-email-form { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: -4px; }
+#test-email-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+#test-email-form .empty-note { padding: 0; flex: 1; min-width: 200px; }
 
 .occ-list {
     max-height: 340px;

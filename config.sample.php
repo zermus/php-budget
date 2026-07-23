@@ -25,25 +25,14 @@ return [
     // All dates (pay dates, due dates, "today") use this timezone.
     'timezone' => 'America/New_York',
 
+    // Email is configured in the app: sign in as the administrator and use
+    // Settings -> Email (transport, from address, SMTP host/port/auth/
+    // encryption), with a "Send test email" button to verify it.
+    //
+    // The block below is an optional fallback, used only for fields left
+    // blank in Settings. New installs can delete it entirely.
     'mail' => [
-        'from'      => 'budget@your.website.com',
-        'from_name' => 'Budget App',
-
-        // 'smtp' = SMTP relay (default: local relay on 127.0.0.1:25),
-        // 'mail' = PHP mail(), 'log' = write to a file (for testing).
-        'transport' => 'smtp',
-
-        // Only used when transport is 'smtp'. A user can override the host
-        // per account in Settings (host or host:port, no auth) for reminders.
-        'smtp' => [
-            'host'       => '127.0.0.1',
-            'port'       => 25,
-            'username'   => '',
-            'password'   => '',
-            'encryption' => 'none',   // 'tls', 'ssl', or 'none'
-        ],
-
-        // Only used when transport is 'log'.
+        // Where 'log' transport writes. Handy for testing without a relay.
         'log_path' => __DIR__ . '/mail.log',
     ],
 ];

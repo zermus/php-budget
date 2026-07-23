@@ -45,18 +45,23 @@ final class SettingsController
     }
 
     /**
-     * Send a test email to the signed-in admin using the SMTP host currently
-     * in the form (so a change can be verified before it is saved).
+     * Send a test email to the signed-in admin using the mail settings
+     * currently in the form, so a change can be verified before it is saved.
      */
     public function testEmail(): void
     {
         $user = Auth::requireAdmin();
         Csrf::require();
 
-        $smtpHost = input_string('smtpHost');
-        $target = $smtpHost !== ''
-            ? 'SMTP relay ' . $smtpHost
-            : 'the server default (' . (string) \App\App::config('mail.transport', 'smtp') . ')';
+        // Posted values win; a blank password falls back to the stored one so
+        // the test still works without re-typing it.
+        $stored = ScheduleService::userSettings(Auth::dataUserId()) ?? [];
+        $posted = $this->mailFields($stored);
+        $config = Mailer::settingsFor(array_merge($stored, $posted));
+
+        $target = $config['transport'] === 'smtp'
+            ? sprintf('SMTP %s:%d (%s)', $config['host'], $config['port'], $config['encryption'])
+            : (string) $config['transport'];
 
         $ok = Mailer::send(
             (string) $user['email'],
@@ -65,16 +70,50 @@ final class SettingsController
             "This is a test message from php-budget.\n\n"
             . 'Sent via: ' . $target . "\n"
             . "If you received it, bill reminders will reach you at this address.\n",
-            $smtpHost !== '' ? $smtpHost : null
+            $config
         );
 
         if ($ok) {
             flash('Test email sent to ' . $user['email'] . ' via ' . $target . '.');
         } else {
-            flash('Test email failed: ' . (Mailer::lastError() ?? 'unknown error') . '.', 'error');
+            flash('Test email failed: ' . (Mailer::lastError() ?? 'unknown error'), 'error');
         }
 
         redirect('/settings');
+    }
+
+    /**
+     * The mail fields from the settings form, normalised for storage.
+     * A blank SMTP password keeps whatever is already saved.
+     *
+     * @param array<string, mixed> $stored current user_settings row
+     * @return array<string, ?string>
+     */
+    private function mailFields(array $stored): array
+    {
+        $transport = input_string('mailTransport');
+        if (!in_array($transport, ['smtp', 'mail', 'log'], true)) {
+            $transport = 'smtp';
+        }
+
+        $encryption = input_string('smtpEncryption');
+        if (!in_array($encryption, ['none', 'tls', 'ssl'], true)) {
+            $encryption = 'none';
+        }
+
+        $password = (string) ($_POST['smtpPassword'] ?? '');
+        $port = input_int('smtpPort');
+
+        return [
+            'mail_transport'  => $transport,
+            'mail_from'       => input_string('mailFrom') ?: null,
+            'mail_from_name'  => input_string('mailFromName') ?: null,
+            'smtp_host'       => input_string('smtpHost') ?: null,
+            'smtp_port'       => $port > 0 && $port <= 65535 ? (string) $port : null,
+            'smtp_username'   => input_string('smtpUsername') ?: null,
+            'smtp_password'   => $password !== '' ? $password : ($stored['smtp_password'] ?? null),
+            'smtp_encryption' => $encryption,
+        ];
     }
 
     /** @param array<string, mixed> $user */
@@ -139,15 +178,25 @@ final class SettingsController
         }
 
         $smtpHost = input_string('smtpHost');
-        if ($smtpHost !== '' && !preg_match('/^[A-Za-z0-9.\-\[\]:]+$/', $smtpHost)) {
-            $this->fail('SMTP host must be a hostname or IP, optionally with :port.');
+        if ($smtpHost !== '' && !preg_match('/^[A-Za-z0-9.\-\[\]]+$/', $smtpHost)) {
+            $this->fail('SMTP host must be a hostname or IP address (set the port separately).');
         }
+
+        $mailFrom = input_string('mailFrom');
+        if ($mailFrom !== '' && !filter_var($mailFrom, FILTER_VALIDATE_EMAIL)) {
+            $this->fail('The "from" address must be a valid email address.');
+        }
+
+        $mail = $this->mailFields($old);
 
         $pdo = Database::pdo();
         $pdo->prepare(
             'UPDATE user_settings
              SET schedule_type = ?, anchor_date = ?, days_of_month = ?, day_of_month = ?,
-                 default_income = ?, reminder_lead_days = ?, window_days = ?, smtp_host = ?
+                 default_income = ?, reminder_lead_days = ?, window_days = ?,
+                 mail_transport = ?, mail_from = ?, mail_from_name = ?,
+                 smtp_host = ?, smtp_port = ?, smtp_username = ?, smtp_password = ?,
+                 smtp_encryption = ?
              WHERE user_id = ?'
         )->execute([
             $type,
@@ -157,7 +206,14 @@ final class SettingsController
             $income,
             $leadDays,
             $windowDays,
-            $smtpHost !== '' ? $smtpHost : null,
+            $mail['mail_transport'],
+            $mail['mail_from'],
+            $mail['mail_from_name'],
+            $mail['smtp_host'],
+            $mail['smtp_port'],
+            $mail['smtp_username'],
+            $mail['smtp_password'],
+            $mail['smtp_encryption'],
             $userId,
         ]);
 

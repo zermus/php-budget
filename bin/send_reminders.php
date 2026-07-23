@@ -30,7 +30,7 @@ $todayStr = $today->format('Y-m-d');
 
 // One pass per budget owner; sub-users share the owner's schedule and bills.
 $owners = $pdo->query(
-    'SELECT u.id, u.email, u.receive_reminders, s.reminder_lead_days, s.smtp_host
+    'SELECT u.id, u.email, u.receive_reminders, s.*
      FROM users u
      INNER JOIN user_settings s ON s.user_id = u.id
      WHERE u.owner_id IS NULL'
@@ -105,9 +105,8 @@ foreach ($owners as $user) {
         $count === 1 ? 's' : ''
     );
 
-    $smtpHost = isset($user['smtp_host']) && $user['smtp_host'] !== null && $user['smtp_host'] !== ''
-        ? (string) $user['smtp_host']
-        : null;
+    // Mail settings the owner saved under Settings, falling back to config.php.
+    $mailSettings = Mailer::settingsFor($user);
 
     // The owner plus any sub-user who has reminders switched on.
     $recipients = [];
@@ -120,7 +119,7 @@ foreach ($owners as $user) {
     }
 
     foreach ($recipients as $email) {
-        if (Mailer::send($email, $email, $subject, implode("\n", $lines), $smtpHost)) {
+        if (Mailer::send($email, $email, $subject, implode("\n", $lines), $mailSettings)) {
             $sent++;
         } else {
             fwrite(STDERR, "Failed to send reminder to {$email}: " . (Mailer::lastError() ?? 'unknown error') . "\n");

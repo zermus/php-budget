@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.3-beta.
+A simple self-hosted paycheck budgeting app. Version 0.4-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -47,8 +47,9 @@ php-budget/
 
 1. Extract the tarball on your server.
 2. Copy `config.sample.php` to `config.php` and fill in the database
-   credentials, `base_url`, timezone, and mail settings. The database user
-   needs permission to create the database (or create it yourself first).
+   credentials, `base_url`, and timezone. The database user needs permission
+   to create the database (or create it yourself first). Email is configured
+   later, in the app.
 3. Point your web server at the app (see Deployment modes below).
 4. Open `https://your.site/install.php` in a browser. The installer creates
    the schema, asks for your email and password (the first user account),
@@ -100,20 +101,28 @@ next day's summary.
 
 ## Email
 
-`config.php` supports three transports under `mail.transport`:
+Email is configured in the app: sign in as the administrator and open
+**Settings → Email**. There are three transports:
 
-- `smtp` (default) — relay via `mail.smtp.*`; ships pointed at
-  `127.0.0.1:25` with no auth, which suits a local Postfix/Sendmail.
-  Authenticated SMTP with TLS is supported via the `username`, `password`,
-  and `encryption` settings.
-- `mail` — PHP's `mail()`.
-- `log` — append messages to `mail.log_path` instead of sending (testing).
+- **SMTP relay** — host, port, encryption, and optional username/password.
+  A local Postfix/Sendmail is typically `127.0.0.1`, port `25`, encryption
+  **None**. Choosing None disables opportunistic STARTTLS, so relays that
+  advertise TLS but can't complete it still work.
+- **PHP mail()** — hands off to the server's own sendmail.
+- **Log to a file** — appends to `mail.log_path` and sends nothing; useful
+  for testing.
 
-The administrator can also set a household SMTP relay (`host` or
-`host:port`, no auth) in Settings; the reminder cron uses it for that
-budget's emails. **Send test email** in Settings verifies the relay
-currently in the box — before you save it — and reports the real failure
-reason if it can't connect.
+**Send test email** sends to the signed-in administrator using whatever is
+currently in the form — saved or not — and reports the real failure reason
+(e.g. "Could not connect to SMTP host") if it doesn't work. SMTP gives up
+after 10 seconds rather than hanging.
+
+The `mail` block in `config.php` is an optional fallback used only for
+fields left blank in Settings; `log_path` is the one setting that still
+lives there.
+
+The SMTP password is stored in the database in plain text, exactly as it
+previously sat in `config.php` — treat database backups accordingly.
 
 ## Users
 

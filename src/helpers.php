@@ -24,10 +24,13 @@ function url(string $path = '/'): string
 
 /**
  * URL for a static asset inside public/, e.g. asset('css/app.css').
+ *
+ * The app version is appended so browsers pick up new CSS/JS immediately
+ * after an upgrade instead of serving a cached copy.
  */
 function asset(string $path): string
 {
-    return url('assets/' . ltrim($path, '/'));
+    return url('assets/' . ltrim($path, '/')) . '?v=' . rawurlencode(App::VERSION);
 }
 
 function redirect(string $path): never

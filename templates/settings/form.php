@@ -68,24 +68,81 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
             <input type="number" id="reminderLeadDays" name="reminderLeadDays" min="0" max="30"
                    value="<?= e((string) ($settings['reminder_lead_days'] ?? 1)) ?>">
         </div>
+
+        <h3>Email</h3>
+        <?php $transport = (string) ($settings['mail_transport'] ?? 'smtp'); ?>
         <div class="field">
-            <label for="smtpHost">SMTP relay for my reminders (host or host:port; blank = server default):</label>
-            <input type="text" id="smtpHost" name="smtpHost" placeholder="127.0.0.1:25"
-                   value="<?= e((string) ($settings['smtp_host'] ?? '')) ?>">
+            <label for="mailTransport">Send mail using:</label>
+            <select id="mailTransport" name="mailTransport">
+                <option value="smtp" <?= $transport === 'smtp' ? 'selected' : '' ?>>SMTP relay</option>
+                <option value="mail" <?= $transport === 'mail' ? 'selected' : '' ?>>PHP mail() — the server's own sendmail</option>
+                <option value="log" <?= $transport === 'log' ? 'selected' : '' ?>>Log to a file — for testing, sends nothing</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="mailFrom">From address:</label>
+            <input type="email" id="mailFrom" name="mailFrom" placeholder="budget@your.website.com"
+                   value="<?= e((string) ($settings['mail_from'] ?? '')) ?>">
+        </div>
+        <div class="field">
+            <label for="mailFromName">From name:</label>
+            <input type="text" id="mailFromName" name="mailFromName" placeholder="Budget App"
+                   value="<?= e((string) ($settings['mail_from_name'] ?? '')) ?>">
+        </div>
+
+        <div class="mail-fields">
+            <div class="field two-up">
+                <div>
+                    <label for="smtpHost">SMTP host:</label>
+                    <input type="text" id="smtpHost" name="smtpHost" placeholder="127.0.0.1"
+                           value="<?= e((string) ($settings['smtp_host'] ?? '')) ?>">
+                </div>
+                <div class="port-col">
+                    <label for="smtpPort">Port:</label>
+                    <input type="number" id="smtpPort" name="smtpPort" min="1" max="65535" placeholder="25"
+                           value="<?= e((string) ($settings['smtp_port'] ?? '')) ?>">
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="smtpEncryption">Encryption:</label>
+                <?php $enc = (string) ($settings['smtp_encryption'] ?? 'none'); ?>
+                <select id="smtpEncryption" name="smtpEncryption">
+                    <option value="none" <?= $enc === 'none' ? 'selected' : '' ?>>None — plain, never upgrades to TLS</option>
+                    <option value="tls" <?= $enc === 'tls' ? 'selected' : '' ?>>STARTTLS (usually port 587)</option>
+                    <option value="ssl" <?= $enc === 'ssl' ? 'selected' : '' ?>>SSL/TLS (usually port 465)</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="smtpUsername">SMTP username (blank for an open local relay):</label>
+                <input type="text" id="smtpUsername" name="smtpUsername" autocomplete="off"
+                       value="<?= e((string) ($settings['smtp_username'] ?? '')) ?>">
+            </div>
+            <div class="field">
+                <label for="smtpPassword">SMTP password:</label>
+                <input type="password" id="smtpPassword" name="smtpPassword" autocomplete="new-password"
+                       placeholder="<?= !empty($settings['smtp_password']) ? 'unchanged — type to replace' : '' ?>">
+            </div>
         </div>
 
         <p class="empty-note">Changing the schedule rebuilds upcoming paychecks and unpaid bill
             occurrences. Paid history is kept.</p>
 
         <button type="submit" class="btn primary">Save Settings</button>
+
+        <div id="test-email-form-anchor"></div>
     </form>
 
     <form method="post" action="<?= e(url('/settings/test-email')) ?>" id="test-email-form">
         <?= Csrf::field() ?>
-        <input type="hidden" name="smtpHost" value="">
+        <?php foreach (['mailTransport', 'mailFrom', 'mailFromName', 'smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpEncryption'] as $field): ?>
+            <input type="hidden" name="<?= e($field) ?>" value="">
+        <?php endforeach; ?>
         <button type="submit" class="btn">Send test email</button>
-        <span class="empty-note">Sends to <?= e($user['email']) ?> using the relay in the box above,
-            even if you haven't saved it yet.</span>
+        <span class="empty-note">Sends to <?= e($user['email']) ?> using the email settings above,
+            even if you haven't saved them yet.</span>
     </form>
 
     <hr>
@@ -127,10 +184,22 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
     select.addEventListener('change', toggle);
     toggle();
 
-    // Test the relay currently typed in the settings form, saved or not.
+    // SMTP-only fields follow the transport choice.
+    var transport = document.getElementById('mailTransport');
+    var mailFields = document.querySelector('.mail-fields');
+    function toggleMail() {
+        mailFields.style.display = transport.value === 'smtp' ? '' : 'none';
+    }
+    transport.addEventListener('change', toggleMail);
+    toggleMail();
+
+    // Test with whatever is currently typed in, saved or not.
     var testForm = document.getElementById('test-email-form');
     testForm.addEventListener('submit', function () {
-        testForm.smtpHost.value = document.getElementById('smtpHost').value;
+        ['mailTransport', 'mailFrom', 'mailFromName', 'smtpHost',
+         'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpEncryption'].forEach(function (id) {
+            testForm[id].value = document.getElementById(id).value;
+        });
     });
 })();
 </script>
