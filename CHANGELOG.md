@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5-beta
+
+Two more roles. Requires a database upgrade (open install.php).
+
+### Functionality
+
+- **Administrator** can now be granted to another user, giving the same
+  access as the account owner — including settings and user management.
+  The owner's account stays protected: it can't be edited or removed from
+  the Users page, and no administrator can change or delete their own
+  account there.
+- **Budgeter**: a user who runs the budget but not the account. They can
+  add, edit, and remove bills, reassign and split bills across paychecks,
+  edit occurrence amounts and paycheck income, and tick bills paid — but
+  not touch the pay schedule, email settings, or users.
+- Permissions are now capability-based internally (manage account / manage
+  bills / mark paid) rather than a single admin flag, so each route and
+  every control on the dashboard follows the same rules.
+
 ## 0.4-beta
 
 Email moves into the app. Requires a database upgrade (open install.php).

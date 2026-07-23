@@ -15,7 +15,7 @@ $billsTotal = $allocatedTotal - $paidTotal;
 $remaining = (float) $paycheck['amount'] - $allocatedTotal;
 $isWave = !empty($paycheck['is_wave']);
 $canPay = Auth::canPay();
-$isAdmin = Auth::isAdmin();
+$isAdmin = Auth::canManageBills();
 ?>
 <div class="paycheck-card<?= $isCurrent ? ' current' : '' ?>" data-paycheck-id="<?= (int) $paycheck['id'] ?>">
     <div class="paycheck-head">

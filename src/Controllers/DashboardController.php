@@ -32,16 +32,16 @@ final class DashboardController
         $pdo = Database::pdo();
         $settings = ScheduleService::userSettings($userId) ?? [];
 
-        // A sort choice on the query string is persisted for next time —
-        // to the account settings for the admin, to the session for
-        // sub-users so they cannot rewrite the owner's default.
-        $sort = Auth::isAdmin()
+        // A sort choice on the query string is persisted for next time — to
+        // the account settings for administrators, to the session for
+        // everyone else so they cannot rewrite the account default.
+        $sort = Auth::canManageAccount()
             ? (string) ($settings['dashboard_sort'] ?? 'amount_desc')
             : (string) ($_SESSION['dashboard_sort'] ?? $settings['dashboard_sort'] ?? 'amount_desc');
 
         $sortParam = input_string('sort', $_GET);
         if ($sortParam !== '' && in_array($sortParam, ScheduleService::SORT_OPTIONS, true) && $sortParam !== $sort) {
-            if (Auth::isAdmin()) {
+            if (Auth::canManageAccount()) {
                 $pdo->prepare('UPDATE user_settings SET dashboard_sort = ? WHERE user_id = ?')
                     ->execute([$sortParam, $userId]);
             } else {
@@ -133,7 +133,7 @@ final class DashboardController
      */
     public function updateAmount(): void
     {
-        Auth::requireAdminJson();
+        Auth::requireBudgeterJson();
         Csrf::requireJson();
         $userId = Auth::dataUserId();
 

@@ -16,7 +16,7 @@ final class AllocationController
 {
     public function editForm(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         $userId = Auth::dataUserId();
 
         $occurrence = $this->userOccurrence(input_int('occurrence_id', $_GET), $userId);
@@ -35,7 +35,7 @@ final class AllocationController
 
     public function save(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         Csrf::require();
         $userId = Auth::dataUserId();
 

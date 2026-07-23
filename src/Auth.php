@@ -98,6 +98,22 @@ final class Auth
         return (int) ($user['owner_id'] ?? 0) ?: (int) $user['id'];
     }
 
+    /**
+     * Roles, most privileged first:
+     *   admin    — everything, including account settings and users
+     *   budgeter — the whole budget: bills, allocations, amounts, paid
+     *   payer    — mark bills paid
+     *   viewer   — read only
+     *
+     * @var array<string, string>
+     */
+    public const ROLE_LABELS = [
+        'admin'    => 'Administrator',
+        'budgeter' => 'Budgeter',
+        'payer'    => 'Bill payer',
+        'viewer'   => 'Read only',
+    ];
+
     public static function role(): string
     {
         $user = self::user();
@@ -105,27 +121,53 @@ final class Auth
         return (string) ($user['role'] ?? 'viewer');
     }
 
-    public static function isAdmin(): bool
+    public static function roleLabel(?string $role = null): string
+    {
+        return self::ROLE_LABELS[$role ?? self::role()] ?? 'Read only';
+    }
+
+    /** True for the account owner (the user who installed / owns the budget). */
+    public static function isOwner(): bool
+    {
+        $user = self::user();
+
+        return $user !== null && ($user['owner_id'] ?? null) === null;
+    }
+
+    /** Account settings (schedule, email, window) and user management. */
+    public static function canManageAccount(): bool
     {
         return self::role() === 'admin';
     }
 
-    /** Admins and payers may tick the paid checkboxes. */
+    /** Bills, allocations, occurrence amounts, skips, paycheck income. */
+    public static function canManageBills(): bool
+    {
+        return in_array(self::role(), ['admin', 'budgeter'], true);
+    }
+
+    /** Ticking the paid checkboxes. */
     public static function canPay(): bool
     {
-        return in_array(self::role(), ['admin', 'payer'], true);
+        return in_array(self::role(), ['admin', 'budgeter', 'payer'], true);
+    }
+
+    /** Backwards-compatible alias used by templates. */
+    public static function isAdmin(): bool
+    {
+        return self::canManageAccount();
     }
 
     /**
-     * Require an admin (bills, schedule settings, allocations, users).
+     * Require account-level access (settings, users).
      *
      * @return array<string, mixed>
      */
     public static function requireAdmin(): array
     {
         $user = self::requireLogin();
-        if (!self::isAdmin()) {
-            flash('That area is only available to the account administrator.', 'error');
+        if (!self::canManageAccount()) {
+            flash('That area is only available to an account administrator.', 'error');
             redirect('/dashboard');
         }
 
@@ -136,8 +178,35 @@ final class Auth
     public static function requireAdminJson(): array
     {
         $user = self::requireLoginJson();
-        if (!self::isAdmin()) {
+        if (!self::canManageAccount()) {
             json_response(['success' => false, 'error' => 'Administrator access required.'], 403);
+        }
+
+        return $user;
+    }
+
+    /**
+     * Require budget-editing access (bills, allocations, amounts).
+     *
+     * @return array<string, mixed>
+     */
+    public static function requireBudgeter(): array
+    {
+        $user = self::requireLogin();
+        if (!self::canManageBills()) {
+            flash('You do not have access to change the budget.', 'error');
+            redirect('/dashboard');
+        }
+
+        return $user;
+    }
+
+    /** @return array<string, mixed> */
+    public static function requireBudgeterJson(): array
+    {
+        $user = self::requireLoginJson();
+        if (!self::canManageBills()) {
+            json_response(['success' => false, 'error' => 'Budget editing access required.'], 403);
         }
 
         return $user;

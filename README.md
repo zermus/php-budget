@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.4-beta.
+A simple self-hosted paycheck budgeting app. Version 0.5-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -126,15 +126,20 @@ previously sat in `config.php` — treat database backups accordingly.
 
 ## Users
 
-The account created by the installer is the **administrator**: it owns the
-budget and manages bills, the pay schedule, allocations, and users. From
-**Users**, the administrator can add other people who share that same budget:
+The account created by the installer **owns** the budget. From **Users**, an
+administrator can add other people who share that same budget:
 
 | Role | Can do |
 |---|---|
-| Administrator | Everything: bills, schedule, allocations, amounts, users |
+| Administrator | Everything: bills, allocations, amounts, pay schedule, email settings, users |
+| Budgeter | The whole budget — add/edit/remove bills, reassign and split them across paychecks, edit amounts and paycheck income, tick bills paid. No account settings or user management. |
 | Bill payer | View the dashboard and tick bills paid |
 | Read only | View the dashboard only |
+
+Administrators added this way are co-administrators with the same access as
+the owner, with two deliberate exceptions: the owner's account cannot be
+edited or removed from the Users page, and no administrator can change or
+delete their own account there (change your own password under Settings).
 
 Each user signs in with their own email and password and can change their own
 password under Settings. Reminder emails are per-user: switch them on or off

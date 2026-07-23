@@ -14,7 +14,7 @@ final class BillController
 {
     public function index(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
 
         $stmt = Database::pdo()->prepare(
             'SELECT * FROM bills WHERE user_id = ? ORDER BY active DESC, name'
@@ -29,7 +29,7 @@ final class BillController
 
     public function createForm(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
 
         echo View::render('bills/form', [
             'title' => 'Add Bill',
@@ -41,7 +41,7 @@ final class BillController
 
     public function create(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         Csrf::require();
 
         [$fields, $error] = $this->validated();
@@ -75,7 +75,7 @@ final class BillController
 
     public function editForm(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
 
         $bill = $this->userBill(input_int('id', $_GET), Auth::dataUserId());
         if ($bill === null) {
@@ -93,7 +93,7 @@ final class BillController
 
     public function update(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         Csrf::require();
         $userId = Auth::dataUserId();
 
@@ -146,7 +146,7 @@ final class BillController
 
     public function toggleActive(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         Csrf::require();
         $userId = Auth::dataUserId();
 
@@ -176,7 +176,7 @@ final class BillController
 
     public function delete(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         Csrf::require();
 
         $stmt = Database::pdo()->prepare('DELETE FROM bills WHERE id = ? AND user_id = ?');

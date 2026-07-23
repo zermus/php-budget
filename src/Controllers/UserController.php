@@ -11,23 +11,37 @@ use App\View;
 
 final class UserController
 {
-    /** Roles an admin may hand out. Admin is the account owner only. */
-    private const ASSIGNABLE_ROLES = ['payer', 'viewer'];
+    /**
+     * Roles an administrator may hand out. A sub-user with 'admin' is a
+     * co-administrator: same access as the owner, except that the owner's
+     * own account can never be edited or removed from here.
+     */
+    private const ASSIGNABLE_ROLES = ['admin', 'budgeter', 'payer', 'viewer'];
 
     public function index(): void
     {
-        $admin = Auth::requireAdmin();
+        $me = Auth::requireAdmin();
+        $ownerId = Auth::dataUserId();
 
-        $stmt = Database::pdo()->prepare(
+        $pdo = Database::pdo();
+
+        $stmt = $pdo->prepare(
             'SELECT id, email, role, receive_reminders, created
-             FROM users WHERE owner_id = ? ORDER BY email'
+             FROM users WHERE owner_id = ? ORDER BY role, email'
         );
-        $stmt->execute([Auth::dataUserId()]);
+        $stmt->execute([$ownerId]);
+        $users = $stmt->fetchAll();
+
+        // The owner is shown for context but is never editable here.
+        $stmt = $pdo->prepare('SELECT id, email, receive_reminders FROM users WHERE id = ?');
+        $stmt->execute([$ownerId]);
+        $owner = $stmt->fetch() ?: [];
 
         echo View::render('users/index', [
             'title' => 'Users',
-            'admin' => $admin,
-            'users' => $stmt->fetchAll(),
+            'me'    => $me,
+            'owner' => $owner,
+            'users' => $users,
         ]);
     }
 
@@ -101,7 +115,7 @@ final class UserController
 
         $user = $this->ownedUser(input_int('id'));
         if ($user === null) {
-            flash('User not found.', 'error');
+            flash('User not found, or not one you can change (you cannot change your own role).', 'error');
             redirect('/users');
         }
 
@@ -131,7 +145,7 @@ final class UserController
 
         $user = $this->ownedUser(input_int('id'));
         if ($user === null) {
-            flash('User not found.', 'error');
+            flash('User not found, or not one you can change (change your own password under Settings).', 'error');
             redirect('/users');
         }
 
@@ -154,18 +168,34 @@ final class UserController
         Auth::requireAdmin();
         Csrf::require();
 
-        // owner_id scoping means an admin can only ever delete their own
-        // sub-users — never themselves, never another household's.
-        $stmt = Database::pdo()->prepare('DELETE FROM users WHERE id = ? AND owner_id = ?');
-        $stmt->execute([input_int('id'), Auth::dataUserId()]);
+        // ownedUser() blocks the owner, other households, and self-deletion.
+        $user = $this->ownedUser(input_int('id'));
+        if ($user === null) {
+            flash('User not found, or not one you can remove.', 'error');
+            redirect('/users');
+        }
 
-        flash($stmt->rowCount() > 0 ? 'User removed.' : 'User not found.', $stmt->rowCount() > 0 ? 'success' : 'error');
+        Database::pdo()->prepare('DELETE FROM users WHERE id = ? AND owner_id = ?')
+            ->execute([(int) $user['id'], Auth::dataUserId()]);
+
+        flash('Removed ' . $user['email'] . '.');
         redirect('/users');
     }
 
-    /** @return array<string, mixed>|null */
+    /**
+     * A user in this household that the caller may act on. Scoping by
+     * owner_id keeps the owner (owner_id NULL) untouchable, and the id
+     * check stops an administrator editing or deleting themselves.
+     *
+     * @return array<string, mixed>|null
+     */
     private function ownedUser(int $userId): ?array
     {
+        $me = Auth::user() ?? [];
+        if ($userId === (int) ($me['id'] ?? 0)) {
+            return null;
+        }
+
         $stmt = Database::pdo()->prepare('SELECT * FROM users WHERE id = ? AND owner_id = ?');
         $stmt->execute([$userId, Auth::dataUserId()]);
         $row = $stmt->fetch();

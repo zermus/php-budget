@@ -49,7 +49,7 @@ final class OccurrenceController
      */
     public function updateAmount(): void
     {
-        Auth::requireAdminJson();
+        Auth::requireBudgeterJson();
         Csrf::requireJson();
 
         $occurrenceId = input_int('id');
@@ -100,7 +100,7 @@ final class OccurrenceController
      */
     public function skip(): void
     {
-        Auth::requireAdmin();
+        Auth::requireBudgeter();
         Csrf::require();
 
         $occurrenceId = input_int('id');

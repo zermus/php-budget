@@ -170,6 +170,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px;
 }
 .badge.wave { background: #2c3f5e; color: #9ec3ff; }
 .badge.role-admin { background: var(--accent-dim); color: #d7f5e6; }
+.badge.role-budgeter { background: #2c3f5e; color: #9ec3ff; }
 .badge.role-payer { background: #4a3a1d; color: #f0d79a; }
 .badge.role-viewer { background: #333; color: var(--muted); }
 

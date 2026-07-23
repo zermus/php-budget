@@ -8,10 +8,10 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 <div class="container narrow">
     <h2>Settings</h2>
 
-    <?php if (!Auth::isAdmin()): ?>
+    <?php if (!Auth::canManageAccount()): ?>
         <p class="empty-note">
-            You are signed in as a <?= Auth::role() === 'payer' ? 'bill payer' : 'read-only user' ?>
-            on this budget. The pay schedule, bills, and reminders are managed by the account
+            You are signed in as a <?= e(strtolower(Auth::roleLabel())) ?> on this budget.
+            The pay schedule, dashboard window, and email settings are managed by an account
             administrator; you can change your own password here.
         </p>
     <?php else: ?>

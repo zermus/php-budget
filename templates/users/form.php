@@ -13,9 +13,12 @@
 
         <div class="field">
             <label for="role">Role:</label>
+            <?php $role = $old['role'] ?? 'budgeter'; ?>
             <select id="role" name="role">
-                <option value="payer" <?= ($old['role'] ?? 'payer') === 'payer' ? 'selected' : '' ?>>Bill payer — can mark bills paid</option>
-                <option value="viewer" <?= ($old['role'] ?? '') === 'viewer' ? 'selected' : '' ?>>Read only — can only view</option>
+                <option value="admin" <?= $role === 'admin' ? 'selected' : '' ?>>Administrator — everything, including settings and users</option>
+                <option value="budgeter" <?= $role === 'budgeter' ? 'selected' : '' ?>>Budgeter — bills, allocations, amounts, mark paid</option>
+                <option value="payer" <?= $role === 'payer' ? 'selected' : '' ?>>Bill payer — mark bills paid</option>
+                <option value="viewer" <?= $role === 'viewer' ? 'selected' : '' ?>>Read only — view only</option>
             </select>
         </div>
 
