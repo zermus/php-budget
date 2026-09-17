@@ -165,8 +165,22 @@ for anyone in the household from the Users page.
 ## Upgrading from a previous version
 
 Extract the new tarball over the old directory (your `config.php` is never
-part of a release) and open `install.php` — it detects an older schema and
-applies migrations. Back up your database first.
+part of a release), sign in as an administrator, and open `install.php` —
+it detects an older schema and applies migrations. Back up your database
+first. The upgrade button is only offered to a signed-in administrator, so
+nobody else can run migrations on your install.
+
+## Security notes
+
+- **Sign-in throttling:** after 5 failed attempts for one email from one IP
+  address (or 20 from one IP across all emails) sign-in is refused for 15
+  minutes. Behind a reverse proxy, make sure the web server passes the real
+  client address through as `REMOTE_ADDR`, or all visitors share one limit.
+- **Password changes end other sessions:** changing your password signs out
+  every other device on the account, and an administrator resetting a
+  user's password signs that user out everywhere.
+- **Headers:** every page forbids framing (`X-Frame-Options`, CSP
+  `frame-ancestors`) and sends `nosniff` and `Referrer-Policy: same-origin`.
 
 ## License
 

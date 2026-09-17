@@ -159,7 +159,7 @@ final class UserController
         Database::pdo()->prepare('UPDATE users SET password_hash = ? WHERE id = ? AND owner_id = ?')
             ->execute([password_hash($password, PASSWORD_ARGON2ID), (int) $user['id'], Auth::dataUserId()]);
 
-        flash('Password reset for ' . $user['email'] . '.');
+        flash('Password reset for ' . $user['email'] . '; they have been signed out everywhere.');
         redirect('/users');
     }
 

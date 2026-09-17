@@ -43,7 +43,7 @@ final class Mailer
 
         return [
             'transport'  => $pick($settings['mail_transport'] ?? null, 'mail.transport', 'smtp'),
-            'from'       => $pick($settings['mail_from'] ?? null, 'mail.from', 'budget@localhost'),
+            'from'       => $pick($settings['mail_from'] ?? null, 'mail.from', self::defaultFrom()),
             'from_name'  => $pick($settings['mail_from_name'] ?? null, 'mail.from_name', 'Budget App'),
             'host'       => $pick($settings['smtp_host'] ?? null, 'mail.smtp.host', '127.0.0.1'),
             'port'       => (int) ($settings['smtp_port'] ?? 0)
@@ -53,6 +53,22 @@ final class Mailer
             'encryption' => $pick($settings['smtp_encryption'] ?? null, 'mail.smtp.encryption', 'none'),
             'log_path'   => App::config('mail.log_path', APP_ROOT . '/mail.log'),
         ];
+    }
+
+    /**
+     * From address when none is configured. PHPMailer rejects a domain with
+     * no dot or an IP literal, so the old "budget@localhost" default made
+     * every send fail with "Invalid address"; use the app's own hostname
+     * when it is a real domain.
+     */
+    private static function defaultFrom(): string
+    {
+        $host = (string) parse_url((string) App::config('base_url', ''), PHP_URL_HOST);
+        if (str_contains($host, '.') && filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return 'budget@' . $host;
+        }
+
+        return 'budget@localhost.localdomain';
     }
 
     /**

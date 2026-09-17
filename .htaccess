@@ -2,19 +2,11 @@
 # Used when the app is extracted directly into a web root. If your document
 # root points at public/ instead, this file is never consulted.
 
-# Never serve application internals or the config file.
-<Files "config.php">
+# Never serve the config, dependency manifests, or logs (mail.log holds
+# reminder emails when the "log" transport is used).
+<FilesMatch "^(config(\.sample)?\.php|composer\.(json|lock)|.*\.log)$">
     Require all denied
-</Files>
-<Files "config.sample.php">
-    Require all denied
-</Files>
-<Files "composer.json">
-    Require all denied
-</Files>
-<Files "composer.lock">
-    Require all denied
-</Files>
+</FilesMatch>
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -27,4 +19,12 @@
 
     # Map everything else into public/.
     RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Without mod_rewrite the app won't route anyway, but internals must still
+# stay private. The optional prefix covers root and subdirectory installs.
+<IfModule !mod_rewrite.c>
+    <IfModule mod_alias.c>
+        RedirectMatch 403 ^(/.*)?/(src|templates|migrations|vendor|bin|releases|tests)(/|$)
+    </IfModule>
 </IfModule>

@@ -149,6 +149,10 @@ final class DashboardController
         $stmt->execute([$amount, $paycheckId, $userId]);
 
         $totals = AllocationService::paycheckTotals($userId, [$paycheckId]);
+        if ($totals === []) {
+            // Not this budget's paycheck: nothing was updated.
+            json_response(['success' => false, 'error' => 'Paycheck not found.'], 404);
+        }
 
         json_response(['success' => true, 'totals' => array_values($totals)]);
     }

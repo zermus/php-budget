@@ -56,11 +56,23 @@ final class OccurrenceController
         $amount = input_decimal('amount');
         $userId = Auth::dataUserId();
 
-        if ($occurrenceId < 1 || $amount === null) {
-            json_response(['success' => false, 'error' => 'Enter a valid dollar amount.'], 422);
+        // Zero is refused like everywhere else a bill amount is entered: a $0
+        // occurrence could never be re-split (splits must be positive), so it
+        // would be stuck. Skip is the way to drop a bill for one period.
+        if ($occurrenceId < 1 || $amount === null || (float) $amount <= 0) {
+            json_response([
+                'success' => false,
+                'error'   => 'Enter a dollar amount above zero. To drop this bill for one period, use Skip.',
+            ], 422);
         }
 
         $pdo = Database::pdo();
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM bill_occurrences WHERE id = ? AND user_id = ?');
+        $stmt->execute([$occurrenceId, $userId]);
+        if ((int) $stmt->fetchColumn() === 0) {
+            json_response(['success' => false, 'error' => 'Bill occurrence not found.'], 404);
+        }
+
         $stmt = $pdo->prepare(
             'UPDATE bill_occurrences SET amount = ? WHERE id = ? AND user_id = ?'
         );
