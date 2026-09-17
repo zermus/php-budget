@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/src/bootstrap.php';
 
 use App\App;
+use App\Auth;
 use App\Csrf;
 use App\Installer\Installer;
 use App\Installer\Migrator;
@@ -31,6 +32,13 @@ try {
 $migrator = new Migrator($pdo);
 $version = $migrator->currentVersion();
 $hasUser = $installer->firstUserExists($pdo, $migrator);
+$needsUpgrade = $version > 0 && $version < App::SCHEMA_VERSION;
+
+// Upgrading an existing install requires a signed-in administrator, so a
+// stranger can't run migrations before the owner has taken a backup.
+// Before 0.3 there were no roles and every account administered its own.
+$canUpgrade = $needsUpgrade && Auth::user() !== null
+    && (!$migrator->columnExists('users', 'role') || Auth::role() === 'admin');
 
 // ---------------------------------------------------------------- POST --
 
@@ -38,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Csrf::require();
     $action = input_string('action');
 
-    if ($action === 'upgrade' && $version > 0 && $version < App::SCHEMA_VERSION) {
+    if ($action === 'upgrade' && $canUpgrade) {
         $applied = $migrator->migrate();
 
         echo View::render('install/upgraded', [
@@ -88,7 +96,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ----------------------------------------------------------------- GET --
 
-if ($version > 0 && $version < App::SCHEMA_VERSION) {
+if ($needsUpgrade && !$canUpgrade) {
+    echo View::render('install/message', [
+        'title'    => 'Upgrade Budget App',
+        'heading'  => 'Sign In to Upgrade',
+        'body'     => 'This installation needs a database upgrade (schema version ' . $version . ' to '
+            . App::SCHEMA_VERSION . '). Sign in as an administrator, then open install.php again to run it.',
+        'homeLink' => true,
+    ]);
+    exit;
+}
+
+if ($needsUpgrade) {
     echo View::render('install/upgrade', [
         'title'       => 'Upgrade Budget App',
         'fromVersion' => $version,

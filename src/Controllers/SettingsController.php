@@ -8,6 +8,7 @@ use App\Auth;
 use App\Csrf;
 use App\Database;
 use App\Mailer;
+use App\Secrets;
 use App\Services\ScheduleService;
 use App\View;
 use DateTimeImmutable;
@@ -18,6 +19,14 @@ final class SettingsController
     {
         $user = Auth::requireLogin();
         $settings = Auth::isAdmin() ? (ScheduleService::userSettings(Auth::dataUserId()) ?? []) : [];
+
+        // Encrypt a plaintext SMTP password left from before an app_key was set.
+        $stored = $settings['smtp_password'] ?? null;
+        if ($stored !== null && !Secrets::isEncrypted($stored) && Secrets::available()) {
+            $settings['smtp_password'] = Secrets::encrypt($stored);
+            Database::pdo()->prepare('UPDATE user_settings SET smtp_password = ? WHERE user_id = ?')
+                ->execute([$settings['smtp_password'], Auth::dataUserId()]);
+        }
 
         echo View::render('settings/form', [
             'title'    => 'Settings',
@@ -91,29 +100,55 @@ final class SettingsController
      */
     private function mailFields(array $stored): array
     {
+        $fallback = Mailer::settingsFor(null); // config.php values (or built-in defaults)
+
         $transport = input_string('mailTransport');
         if (!in_array($transport, ['smtp', 'mail', 'log'], true)) {
-            $transport = 'smtp';
+            $transport = (string) $fallback['transport'];
         }
 
         $encryption = input_string('smtpEncryption');
         if (!in_array($encryption, ['none', 'tls', 'ssl'], true)) {
-            $encryption = 'none';
+            $encryption = (string) $fallback['encryption'];
         }
 
         $password = (string) ($_POST['smtpPassword'] ?? '');
+        if (!empty($_POST['smtpPasswordClear'])) {
+            $password = null;
+        } elseif ($password === '') {
+            // Blank keeps the saved one, encrypting it if it predates the key.
+            $password = $stored['smtp_password'] ?? null;
+            if ($password !== null && !Secrets::isEncrypted($password)) {
+                $password = Secrets::encrypt($password);
+            }
+        } else {
+            $password = Secrets::encrypt($password);
+        }
         $port = input_int('smtpPort');
 
         return [
-            'mail_transport'  => $transport,
+            // Transport and encryption stay NULL (follow config.php) until an
+            // administrator picks something different from what config.php
+            // already provides. Storing the form's default outright is what
+            // silently overrode config.php before 0.6.
+            'mail_transport'  => self::unlessFallback($transport, $stored['mail_transport'] ?? null, (string) $fallback['transport']),
             'mail_from'       => input_string('mailFrom') ?: null,
             'mail_from_name'  => input_string('mailFromName') ?: null,
             'smtp_host'       => input_string('smtpHost') ?: null,
             'smtp_port'       => $port > 0 && $port <= 65535 ? (string) $port : null,
             'smtp_username'   => input_string('smtpUsername') ?: null,
-            'smtp_password'   => $password !== '' ? $password : ($stored['smtp_password'] ?? null),
-            'smtp_encryption' => $encryption,
+            'smtp_password'   => $password,
+            'smtp_encryption' => self::unlessFallback($encryption, $stored['smtp_encryption'] ?? null, (string) $fallback['encryption']),
         ];
+    }
+
+    /**
+     * NULL when the stored value is already NULL and the choice matches the
+     * config.php fallback, so an untouched field keeps following config.php.
+     */
+    private static function unlessFallback(string $chosen, ?string $stored, string $fallback): ?string
+    {
+        return ($stored === null && $chosen === $fallback) ? null : $chosen;
     }
 
     /** @param array<string, mixed> $user */
@@ -266,10 +301,12 @@ final class SettingsController
                 . 'one lowercase letter, one number, and one special character.');
         }
 
+        $hash = password_hash($new, PASSWORD_ARGON2ID);
         Database::pdo()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-            ->execute([password_hash($new, PASSWORD_ARGON2ID), (int) $user['id']]);
+            ->execute([$hash, (int) $user['id']]);
+        Auth::passwordChanged($hash);
 
-        flash('Password updated.');
+        flash('Password updated. Any other devices signed in to this account were signed out.');
         redirect('/settings');
     }
 

@@ -25,6 +25,14 @@ return [
     // All dates (pay dates, due dates, "today") use this timezone.
     'timezone' => 'America/New_York',
 
+    // Key for encrypting secrets stored in the database (the SMTP password).
+    // Generate one with:
+    //   php -r "echo 'base64:' . base64_encode(random_bytes(32)), PHP_EOL;"
+    // Keep a copy with your database backups — a saved SMTP password can't
+    // be read without it. Left blank, the password is stored unencrypted and
+    // Settings -> Email shows a ready-made key to paste here.
+    'app_key' => '',
+
     // Email is configured in the app: sign in as the administrator and use
     // Settings -> Email (transport, from address, SMTP host/port/auth/
     // encryption), with a "Send test email" button to verify it.

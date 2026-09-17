@@ -1,5 +1,71 @@
 # Changelog
 
+## Unreleased
+
+Security hardening. Requires a database upgrade (sign in as an
+administrator, then open install.php).
+
+### Security
+
+- **Script injection through a user's email address.** The Users page put
+  each email into an inline `confirm()` on the Remove button. HTML escaping
+  doesn't protect a JavaScript string there (the browser decodes entities
+  before running the handler), and email validation allows `'` and
+  backticks, so an administrator-created address such as
+  ``a'-alert`1`-'@example.com`` ran script for any administrator viewing
+  the page. Legitimate addresses like `o'brien@…` also broke the
+  confirmation, deleting the user without asking. The message is now a
+  properly escaped JavaScript literal.
+- **Sign-in throttling.** Failed logins are counted per email + IP, per IP,
+  and per email over 15 minutes (new `login_attempts` table); past the
+  limit the password isn't even checked. Unknown emails now take the same
+  Argon2id work as a wrong password, so timing no longer reveals which
+  addresses have accounts.
+- **Password changes end other sessions.** Sessions remember a fingerprint
+  of the password hash they signed in with; changing your password signs
+  out your other devices, and an administrator's password reset signs that
+  user out everywhere. (Everyone is signed out once after upgrading.)
+- **Database upgrades require a signed-in administrator.** Previously
+  anyone could run pending migrations from install.php as soon as new files
+  were extracted, before the owner had taken a backup.
+- **Security headers:** framing is forbidden (`X-Frame-Options`, CSP
+  `frame-ancestors`), plus `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: same-origin`.
+- **Flat deploys:** `.htaccess` now also denies `*.log` files (`mail.log`
+  holds reminder emails with the log transport) and blocks internal
+  directories even when mod_rewrite is unavailable.
+- **SMTP password encrypted at rest.** With the new `app_key` in
+  config.php, the password is stored with AES-256-GCM, so a database dump
+  or backup no longer contains it. Existing passwords are encrypted during
+  the upgrade (or the first time Settings is opened after a key is added).
+  Without a key, Settings → Email shows a generated one to paste in.
+- **The dashboard sort order is saved by a CSRF-protected POST.** It was
+  saved from a `?sort=` link, so another site could change an
+  administrator's saved order just by getting them to open a URL.
+
+### Fixed
+
+- **config.php mail settings were silently ignored after upgrading to
+  0.4.** The new transport and encryption columns defaulted to `smtp` and
+  `none`, which always beat the config.php fallback, so an install that
+  used STARTTLS/SSL or the `mail`/`log` transport in config.php quietly
+  switched to plain, unencrypted SMTP. The columns now default to NULL,
+  accounts that never set email in the app follow config.php again, the
+  Settings form shows the values actually in effect, and saving the form
+  no longer pins config.php's values into the database.
+- With no From address set anywhere, every email failed with "Invalid
+  address: budget@localhost" (PHPMailer rejects a domain without a dot).
+  The default is now `budget@` + the host in `base_url`, or
+  `budget@localhost.localdomain` when that host is an IP or has no dot.
+- A saved SMTP password can now be removed (Settings → Email).
+- Editing a paycheck amount typed with a thousands separator (`1,250`)
+  showed `NaN` until the page was reloaded.
+- A bill occurrence could be set to $0.00 inline, after which it could
+  never be reassigned or split (splits must be positive). Zero is refused
+  with a pointer to Skip, as it is when adding a bill.
+- Inline amount edits for an occurrence or paycheck outside your budget
+  reported success; they now return "not found".
+
 ## 0.5-beta
 
 Two more roles. Requires a database upgrade (open install.php).

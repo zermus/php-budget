@@ -18,6 +18,28 @@ final class Auth
     {
         session_regenerate_id(true);
         $_SESSION['user_id'] = (int) $user['id'];
+        $_SESSION['password_fp'] = self::passwordFingerprint((string) $user['password_hash']);
+    }
+
+    /**
+     * Keep the current session valid after its own password change, while
+     * every other session for the account is signed out.
+     */
+    public static function passwordChanged(string $newHash): void
+    {
+        session_regenerate_id(true);
+        $_SESSION['password_fp'] = self::passwordFingerprint($newHash);
+        self::$user = null;
+    }
+
+    /**
+     * Sessions remember a fingerprint of the password hash they signed in
+     * with. A password change or admin reset changes the hash, which ends
+     * every session that predates it — including a stolen one.
+     */
+    private static function passwordFingerprint(string $hash): string
+    {
+        return hash('sha256', $hash);
     }
 
     public static function logout(): void
@@ -45,8 +67,11 @@ final class Auth
         $stmt->execute([(int) $_SESSION['user_id']]);
         $user = $stmt->fetch();
 
-        if (!$user) {
-            unset($_SESSION['user_id']);
+        if (!$user || !hash_equals(
+            (string) ($_SESSION['password_fp'] ?? ''),
+            self::passwordFingerprint((string) $user['password_hash'])
+        )) {
+            unset($_SESSION['user_id'], $_SESSION['password_fp']);
 
             return null;
         }

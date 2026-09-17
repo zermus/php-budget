@@ -1,8 +1,14 @@
 <?php
 use App\Auth;
 use App\Csrf;
+use App\Mailer;
+use App\Secrets;
 
 $type = (string) ($settings['schedule_type'] ?? 'biweekly');
+$storedPassword = $settings['smtp_password'] ?? null;
+$passwordUnreadable = Secrets::isEncrypted($storedPassword) && Secrets::decrypt($storedPassword) === null;
+// What mail will actually use: saved values, falling back to config.php.
+$effectiveMail = Mailer::settingsFor($settings);
 $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 ?>
 <div class="container narrow">
@@ -70,7 +76,7 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
         </div>
 
         <h3>Email</h3>
-        <?php $transport = (string) ($settings['mail_transport'] ?? 'smtp'); ?>
+        <?php $transport = (string) $effectiveMail['transport']; ?>
         <div class="field">
             <label for="mailTransport">Send mail using:</label>
             <select id="mailTransport" name="mailTransport">
@@ -107,7 +113,7 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 
             <div class="field">
                 <label for="smtpEncryption">Encryption:</label>
-                <?php $enc = (string) ($settings['smtp_encryption'] ?? 'none'); ?>
+                <?php $enc = (string) $effectiveMail['encryption']; ?>
                 <select id="smtpEncryption" name="smtpEncryption">
                     <option value="none" <?= $enc === 'none' ? 'selected' : '' ?>>None — plain, never upgrades to TLS</option>
                     <option value="tls" <?= $enc === 'tls' ? 'selected' : '' ?>>STARTTLS (usually port 587)</option>
@@ -120,10 +126,29 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
                 <input type="text" id="smtpUsername" name="smtpUsername" autocomplete="off"
                        value="<?= e((string) ($settings['smtp_username'] ?? '')) ?>">
             </div>
+            <?php if (!Secrets::available()): ?>
+            <div class="message warning">
+                The SMTP password is stored unencrypted because config.php has no <code>app_key</code>.
+                To encrypt it, add this line to config.php, then reload this page:<br>
+                <code>'app_key' =&gt; '<?= e(Secrets::generateKey()) ?>',</code><br>
+                Keep a copy with your database backups: without it a saved password can't be read.
+            </div>
+            <?php elseif ($passwordUnreadable): ?>
+            <div class="message error">
+                The saved SMTP password can't be decrypted — <code>app_key</code> in config.php has
+                changed. Type the password again to re-save it.
+            </div>
+            <?php endif; ?>
             <div class="field">
                 <label for="smtpPassword">SMTP password:</label>
                 <input type="password" id="smtpPassword" name="smtpPassword" autocomplete="new-password"
                        placeholder="<?= !empty($settings['smtp_password']) ? 'unchanged — type to replace' : '' ?>">
+                <?php if (!empty($settings['smtp_password'])): ?>
+                <label class="inline-check">
+                    <input type="checkbox" id="smtpPasswordClear" name="smtpPasswordClear" value="1">
+                    Remove the saved password
+                </label>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -137,7 +162,7 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 
     <form method="post" action="<?= e(url('/settings/test-email')) ?>" id="test-email-form">
         <?= Csrf::field() ?>
-        <?php foreach (['mailTransport', 'mailFrom', 'mailFromName', 'smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpEncryption'] as $field): ?>
+        <?php foreach (['mailTransport', 'mailFrom', 'mailFromName', 'smtpHost', 'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpPasswordClear', 'smtpEncryption'] as $field): ?>
             <input type="hidden" name="<?= e($field) ?>" value="">
         <?php endforeach; ?>
         <button type="submit" class="btn">Send test email</button>
@@ -200,6 +225,8 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
          'smtpPort', 'smtpUsername', 'smtpPassword', 'smtpEncryption'].forEach(function (id) {
             testForm[id].value = document.getElementById(id).value;
         });
+        var clear = document.getElementById('smtpPasswordClear');
+        testForm.smtpPasswordClear.value = clear && clear.checked ? '1' : '';
     });
 })();
 </script>

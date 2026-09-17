@@ -72,6 +72,17 @@ set_exception_handler(static function (Throwable $e): void {
         . '</body></html>';
 });
 
+// --- Security headers ---------------------------------------------------
+
+if (PHP_SAPI !== 'cli') {
+    // No framing (clickjacking a paid checkbox or a Remove button), no MIME
+    // sniffing, and budget URLs never leak to other sites via Referer.
+    header('X-Frame-Options: DENY');
+    header("Content-Security-Policy: frame-ancestors 'none'");
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: same-origin');
+}
+
 // --- Session ------------------------------------------------------------
 
 if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {

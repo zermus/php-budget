@@ -5,15 +5,17 @@
      data-pay-amount-url="<?= e(url('/paychecks/amount')) ?>">
     <div class="page-head">
         <h1>Upcoming Paychecks</h1>
-        <div class="dash-tools">
+        <form class="dash-tools" method="post" action="<?= e(url('/dashboard/sort')) ?>">
+            <?= Csrf::field() ?>
             <span class="empty-note">Click on bill item to edit.</span>
             <label for="sortSelect" class="empty-note">Order bills:</label>
-            <select id="sortSelect">
+            <select id="sortSelect" name="sort">
                 <option value="amount_desc" <?= $sort === 'amount_desc' ? 'selected' : '' ?>>Largest first</option>
                 <option value="amount_asc" <?= $sort === 'amount_asc' ? 'selected' : '' ?>>Smallest first</option>
                 <option value="due_date" <?= $sort === 'due_date' ? 'selected' : '' ?>>By due date</option>
             </select>
-        </div>
+            <noscript><button type="submit" class="btn small">Apply</button></noscript>
+        </form>
     </div>
 
     <?php if (empty($paychecks)): ?>

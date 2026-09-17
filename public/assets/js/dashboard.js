@@ -52,8 +52,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (value === null) {
             return null;
         }
-        value = value.trim().replace(/^\$/, '');
-        if (!/^\d+(\.\d{1,2})?$/.test(value.replace(/,/g, ''))) {
+        // Strip "$" and thousands separators here: the caller formats the
+        // returned value, and Number('1,250') is NaN.
+        value = value.trim().replace(/^\$/, '').replace(/,/g, '');
+        if (!/^\d+(\.\d{1,2})?$/.test(value)) {
             window.alert('Enter a valid dollar amount, e.g. 125.00');
             return null;
         }
@@ -90,14 +92,12 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Sort selector: reload with the choice; the server persists it.
+    // Sort selector: POST the choice (CSRF-checked); the server saves it and
+    // redirects back to the first page.
     var sortSelect = document.getElementById('sortSelect');
     if (sortSelect) {
         sortSelect.addEventListener('change', function () {
-            var target = new URL(window.location.href);
-            target.searchParams.set('sort', sortSelect.value);
-            target.searchParams.delete('page');
-            window.location.href = target.toString();
+            sortSelect.form.submit();
         });
     }
 
