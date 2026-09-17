@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6-beta
 
 Security hardening. Requires a database upgrade (sign in as an
 administrator, then open install.php).
