@@ -32,6 +32,7 @@ $router->post('/login', [$auth, 'login']);
 $router->post('/logout', [$auth, 'logout']);
 
 $router->get('/dashboard', [$dashboard, 'index']);
+$router->post('/dashboard/sort', [$dashboard, 'saveSort']);
 $router->post('/paychecks/amount', [$dashboard, 'updateAmount']);
 
 $router->get('/bills', [$bills, 'index']);

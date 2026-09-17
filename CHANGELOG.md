@@ -34,6 +34,14 @@ administrator, then open install.php).
 - **Flat deploys:** `.htaccess` now also denies `*.log` files (`mail.log`
   holds reminder emails with the log transport) and blocks internal
   directories even when mod_rewrite is unavailable.
+- **SMTP password encrypted at rest.** With the new `app_key` in
+  config.php, the password is stored with AES-256-GCM, so a database dump
+  or backup no longer contains it. Existing passwords are encrypted during
+  the upgrade (or the first time Settings is opened after a key is added).
+  Without a key, Settings → Email shows a generated one to paste in.
+- **The dashboard sort order is saved by a CSRF-protected POST.** It was
+  saved from a `?sort=` link, so another site could change an
+  administrator's saved order just by getting them to open a URL.
 
 ### Fixed
 

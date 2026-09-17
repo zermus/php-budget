@@ -92,14 +92,12 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Sort selector: reload with the choice; the server persists it.
+    // Sort selector: POST the choice (CSRF-checked); the server saves it and
+    // redirects back to the first page.
     var sortSelect = document.getElementById('sortSelect');
     if (sortSelect) {
         sortSelect.addEventListener('change', function () {
-            var target = new URL(window.location.href);
-            target.searchParams.set('sort', sortSelect.value);
-            target.searchParams.delete('page');
-            window.location.href = target.toString();
+            sortSelect.form.submit();
         });
     }
 

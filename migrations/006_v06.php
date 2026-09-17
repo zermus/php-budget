@@ -3,10 +3,11 @@
 declare(strict_types=1);
 
 use App\Installer\Migrator;
+use App\Secrets;
 
 return [
     'version' => 6,
-    'description' => 'Login throttling; mail transport and encryption fall back to config.php again (0.6)',
+    'description' => 'Login throttling; mail settings fall back to config.php again; encrypted SMTP password (0.6)',
     'up' => function (PDO $pdo, Migrator $m): void {
         if (!$m->tableExists('login_attempts')) {
             $pdo->exec(
@@ -25,11 +26,26 @@ return [
         // value always beats config.php, so installs that kept a different
         // transport or STARTTLS/SSL in config.php were silently switched to
         // plain, unencrypted SMTP. NULL means "use config.php" again.
+        // smtp_password widens to hold the encrypted form (base64 + IV + tag).
         $pdo->exec(
             'ALTER TABLE user_settings
              MODIFY COLUMN mail_transport VARCHAR(10) NULL DEFAULT NULL,
-             MODIFY COLUMN smtp_encryption VARCHAR(10) NULL DEFAULT NULL'
+             MODIFY COLUMN smtp_encryption VARCHAR(10) NULL DEFAULT NULL,
+             MODIFY COLUMN smtp_password VARCHAR(1024) NULL'
         );
+
+        // Encrypt existing SMTP passwords now if config.php already has an
+        // app_key; otherwise the Settings page does it once a key is added.
+        if (Secrets::available()) {
+            $rows = $pdo->query('SELECT user_id, smtp_password FROM user_settings WHERE smtp_password IS NOT NULL')
+                ->fetchAll();
+            $update = $pdo->prepare('UPDATE user_settings SET smtp_password = ? WHERE user_id = ?');
+            foreach ($rows as $row) {
+                if (!Secrets::isEncrypted((string) $row['smtp_password'])) {
+                    $update->execute([Secrets::encrypt((string) $row['smtp_password']), (int) $row['user_id']]);
+                }
+            }
+        }
 
         // Rows where email was never configured in the app still carry only
         // those column defaults; put them back on the config.php fallback.

@@ -32,23 +32,11 @@ final class DashboardController
         $pdo = Database::pdo();
         $settings = ScheduleService::userSettings($userId) ?? [];
 
-        // A sort choice on the query string is persisted for next time — to
-        // the account settings for administrators, to the session for
-        // everyone else so they cannot rewrite the account default.
+        // Administrators use the account default; everyone else can keep their
+        // own choice in the session. Choices are saved by saveSort().
         $sort = Auth::canManageAccount()
             ? (string) ($settings['dashboard_sort'] ?? 'amount_desc')
             : (string) ($_SESSION['dashboard_sort'] ?? $settings['dashboard_sort'] ?? 'amount_desc');
-
-        $sortParam = input_string('sort', $_GET);
-        if ($sortParam !== '' && in_array($sortParam, ScheduleService::SORT_OPTIONS, true) && $sortParam !== $sort) {
-            if (Auth::canManageAccount()) {
-                $pdo->prepare('UPDATE user_settings SET dashboard_sort = ? WHERE user_id = ?')
-                    ->execute([$sortParam, $userId]);
-            } else {
-                $_SESSION['dashboard_sort'] = $sortParam;
-            }
-            $sort = $sortParam;
-        }
 
         $today = new DateTimeImmutable('today');
         $todayStr = $today->format('Y-m-d');
@@ -126,6 +114,30 @@ final class DashboardController
             'totalPages'     => $totalPages,
             'scripts'        => [asset('js/dashboard.js')],
         ]);
+    }
+
+    /**
+     * Save the bill sort order: to the account settings for administrators,
+     * to the session for everyone else so they can't rewrite the account
+     * default. A CSRF-checked POST, so another site can't change it by
+     * getting a signed-in browser to follow a link.
+     */
+    public function saveSort(): void
+    {
+        Auth::requireLogin();
+        Csrf::require();
+
+        $sort = input_string('sort');
+        if (in_array($sort, ScheduleService::SORT_OPTIONS, true)) {
+            if (Auth::canManageAccount()) {
+                Database::pdo()->prepare('UPDATE user_settings SET dashboard_sort = ? WHERE user_id = ?')
+                    ->execute([$sort, Auth::dataUserId()]);
+            } else {
+                $_SESSION['dashboard_sort'] = $sort;
+            }
+        }
+
+        redirect('/dashboard');
     }
 
     /**

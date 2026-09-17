@@ -121,8 +121,9 @@ The `mail` block in `config.php` is an optional fallback used only for
 fields left blank in Settings; `log_path` is the one setting that still
 lives there.
 
-The SMTP password is stored in the database in plain text, exactly as it
-previously sat in `config.php` — treat database backups accordingly.
+With `app_key` set in `config.php`, the SMTP password is stored encrypted
+(see Security notes below); without it, it is stored in plain text, and
+Settings → Email shows a key you can paste into `config.php`.
 
 ## Users
 
@@ -181,6 +182,13 @@ nobody else can run migrations on your install.
   user's password signs that user out everywhere.
 - **Headers:** every page forbids framing (`X-Frame-Options`, CSP
   `frame-ancestors`) and sends `nosniff` and `Referrer-Policy: same-origin`.
+- **SMTP password encryption:** set `app_key` in `config.php` (see
+  `config.sample.php`; Settings → Email also shows a ready-made key) and the
+  SMTP password is stored encrypted with AES-256-GCM. A database dump or
+  backup then no longer reveals your relay password. The key sits in
+  `config.php` alongside the database credentials, so this doesn't protect
+  against someone who can read your files. Back the key up: without it a
+  saved password can't be read and has to be typed in again.
 
 ## License
 

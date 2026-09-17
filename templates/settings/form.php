@@ -2,8 +2,11 @@
 use App\Auth;
 use App\Csrf;
 use App\Mailer;
+use App\Secrets;
 
 $type = (string) ($settings['schedule_type'] ?? 'biweekly');
+$storedPassword = $settings['smtp_password'] ?? null;
+$passwordUnreadable = Secrets::isEncrypted($storedPassword) && Secrets::decrypt($storedPassword) === null;
 // What mail will actually use: saved values, falling back to config.php.
 $effectiveMail = Mailer::settingsFor($settings);
 $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
@@ -123,6 +126,19 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
                 <input type="text" id="smtpUsername" name="smtpUsername" autocomplete="off"
                        value="<?= e((string) ($settings['smtp_username'] ?? '')) ?>">
             </div>
+            <?php if (!Secrets::available()): ?>
+            <div class="message warning">
+                The SMTP password is stored unencrypted because config.php has no <code>app_key</code>.
+                To encrypt it, add this line to config.php, then reload this page:<br>
+                <code>'app_key' =&gt; '<?= e(Secrets::generateKey()) ?>',</code><br>
+                Keep a copy with your database backups: without it a saved password can't be read.
+            </div>
+            <?php elseif ($passwordUnreadable): ?>
+            <div class="message error">
+                The saved SMTP password can't be decrypted — <code>app_key</code> in config.php has
+                changed. Type the password again to re-save it.
+            </div>
+            <?php endif; ?>
             <div class="field">
                 <label for="smtpPassword">SMTP password:</label>
                 <input type="password" id="smtpPassword" name="smtpPassword" autocomplete="new-password"

@@ -49,7 +49,7 @@ final class Mailer
             'port'       => (int) ($settings['smtp_port'] ?? 0)
                 ?: (int) App::config('mail.smtp.port', 25),
             'username'   => $pick($settings['smtp_username'] ?? null, 'mail.smtp.username', ''),
-            'password'   => $pick($settings['smtp_password'] ?? null, 'mail.smtp.password', ''),
+            'password'   => $pick(Secrets::decrypt($settings['smtp_password'] ?? null), 'mail.smtp.password', ''),
             'encryption' => $pick($settings['smtp_encryption'] ?? null, 'mail.smtp.encryption', 'none'),
             'log_path'   => App::config('mail.log_path', APP_ROOT . '/mail.log'),
         ];

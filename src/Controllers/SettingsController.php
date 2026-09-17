@@ -8,6 +8,7 @@ use App\Auth;
 use App\Csrf;
 use App\Database;
 use App\Mailer;
+use App\Secrets;
 use App\Services\ScheduleService;
 use App\View;
 use DateTimeImmutable;
@@ -18,6 +19,14 @@ final class SettingsController
     {
         $user = Auth::requireLogin();
         $settings = Auth::isAdmin() ? (ScheduleService::userSettings(Auth::dataUserId()) ?? []) : [];
+
+        // Encrypt a plaintext SMTP password left from before an app_key was set.
+        $stored = $settings['smtp_password'] ?? null;
+        if ($stored !== null && !Secrets::isEncrypted($stored) && Secrets::available()) {
+            $settings['smtp_password'] = Secrets::encrypt($stored);
+            Database::pdo()->prepare('UPDATE user_settings SET smtp_password = ? WHERE user_id = ?')
+                ->execute([$settings['smtp_password'], Auth::dataUserId()]);
+        }
 
         echo View::render('settings/form', [
             'title'    => 'Settings',
@@ -107,7 +116,13 @@ final class SettingsController
         if (!empty($_POST['smtpPasswordClear'])) {
             $password = null;
         } elseif ($password === '') {
-            $password = $stored['smtp_password'] ?? null; // blank = keep the saved one
+            // Blank keeps the saved one, encrypting it if it predates the key.
+            $password = $stored['smtp_password'] ?? null;
+            if ($password !== null && !Secrets::isEncrypted($password)) {
+                $password = Secrets::encrypt($password);
+            }
+        } else {
+            $password = Secrets::encrypt($password);
         }
         $port = input_int('smtpPort');
 
