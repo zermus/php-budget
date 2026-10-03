@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.6-beta.
+A simple self-hosted paycheck budgeting app. Version 0.7-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -166,9 +166,9 @@ for anyone in the household from the Users page.
   Paid history, allocations, split/reassigned bills, skips, edited amounts,
   paycheck overrides, and every-N phase are preserved. Protected checks that
   no longer land on the new schedule remain visible rather than being deleted.
-  Overrides created before version 0.7 can only be identified when their amount
-  differs from the then-current default; equal-to-default legacy overrides are
-  indistinguishable from generated values.
+  Overrides created before version 0.7-beta can only be identified when their
+  amount differs from the then-current default; equal-to-default legacy
+  overrides are indistinguishable from generated values.
 
 ## Upgrading from a previous version
 

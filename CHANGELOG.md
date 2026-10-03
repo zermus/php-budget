@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7-beta
+
+Safer installation and pay-schedule changes. Requires a database upgrade (sign
+in as an administrator, then open `install.php`).
+
+### Security
+
+- First-time setup now requires a private `setup_token` from `config.php`, so a
+  public visitor cannot claim the initial administrator account. Setup is
+  serialized and creates the schema, owner, and settings atomically.
+
+### Functionality
+
+- Changing a pay schedule now reconciles future generated dates in place
+  instead of deleting and rebuilding them. Paid history, allocations,
+  split/reassigned bills, skips, amount edits, paycheck overrides, and
+  every-N-paycheck phase are preserved.
+- Paycheck overrides are now tracked explicitly. During upgrade, legacy values
+  that differ from the current default are marked as overrides; an old explicit
+  override equal to the default cannot be distinguished from a generated value.
+- Protected paychecks that no longer occur on the new schedule remain visible
+  rather than losing associated data.
+
 ## 0.6-beta
 
 Security hardening. Requires a database upgrade (sign in as an
