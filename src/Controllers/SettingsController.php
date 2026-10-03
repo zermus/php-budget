@@ -10,6 +10,7 @@ use App\Database;
 use App\Mailer;
 use App\Secrets;
 use App\Services\ScheduleService;
+use App\Services\ScheduleTransitionService;
 use App\View;
 use DateTimeImmutable;
 
@@ -222,61 +223,79 @@ final class SettingsController
             $this->fail('The "from" address must be a valid email address.');
         }
 
-        $mail = $this->mailFields($old);
-
         $pdo = Database::pdo();
-        $pdo->prepare(
-            'UPDATE user_settings
-             SET schedule_type = ?, anchor_date = ?, days_of_month = ?, day_of_month = ?,
-                 default_income = ?, reminder_lead_days = ?, window_days = ?,
-                 mail_transport = ?, mail_from = ?, mail_from_name = ?,
-                 smtp_host = ?, smtp_port = ?, smtp_username = ?, smtp_password = ?,
-                 smtp_encryption = ?
-             WHERE user_id = ?'
-        )->execute([
-            $type,
-            $anchorDate !== '' ? $anchorDate : null,
-            $daysOfMonth,
-            $dayOfMonth,
-            $income,
-            $leadDays,
-            $windowDays,
-            $mail['mail_transport'],
-            $mail['mail_from'],
-            $mail['mail_from_name'],
-            $mail['smtp_host'],
-            $mail['smtp_port'],
-            $mail['smtp_username'],
-            $mail['smtp_password'],
-            $mail['smtp_encryption'],
-            $userId,
-        ]);
+        $today = new DateTimeImmutable('today');
+        $todayStr = $today->format('Y-m-d');
 
-        $todayStr = (new DateTimeImmutable('today'))->format('Y-m-d');
+        $pdo->beginTransaction();
+        try {
+            $lock = $pdo->prepare('SELECT * FROM user_settings WHERE user_id = ? FOR UPDATE');
+            $lock->execute([$userId]);
+            $old = $lock->fetch() ?: $old;
+            $mail = $this->mailFields($old);
+            $new = array_merge($old, [
+                'schedule_type' => $type,
+                'anchor_date' => $anchorDate !== '' ? $anchorDate : null,
+                'days_of_month' => $daysOfMonth,
+                'day_of_month' => $dayOfMonth,
+                'default_income' => $income,
+                'window_days' => $windowDays,
+            ]);
+            $scheduleChanged = $type !== (string) $old['schedule_type']
+                || ($anchorDate ?? '') !== (string) ($old['anchor_date'] ?? '')
+                || ($daysOfMonth ?? '') !== (string) ($old['days_of_month'] ?? '')
+                || ($dayOfMonth ?? 0) !== (int) ($old['day_of_month'] ?? 0);
+            if ($scheduleChanged) {
+                $new['schedule_effective_date'] = $todayStr;
+            }
 
-        $scheduleChanged = $type !== (string) $old['schedule_type']
-            || ($anchorDate ?? '') !== (string) ($old['anchor_date'] ?? '')
-            || ($daysOfMonth ?? '') !== (string) ($old['days_of_month'] ?? '')
-            || ($dayOfMonth ?? 0) !== (int) ($old['day_of_month'] ?? 0);
+            $pdo->prepare(
+                'UPDATE user_settings
+                 SET schedule_type = ?, anchor_date = ?, days_of_month = ?, day_of_month = ?,
+                     schedule_effective_date = ?, default_income = ?, reminder_lead_days = ?, window_days = ?,
+                     mail_transport = ?, mail_from = ?, mail_from_name = ?,
+                     smtp_host = ?, smtp_port = ?, smtp_username = ?, smtp_password = ?,
+                     smtp_encryption = ?
+                 WHERE user_id = ?'
+            )->execute([
+                $type,
+                $anchorDate !== '' ? $anchorDate : null,
+                $daysOfMonth,
+                $dayOfMonth,
+                $new['schedule_effective_date'] ?? null,
+                $income,
+                $leadDays,
+                $windowDays,
+                $mail['mail_transport'],
+                $mail['mail_from'],
+                $mail['mail_from_name'],
+                $mail['smtp_host'],
+                $mail['smtp_port'],
+                $mail['smtp_username'],
+                $mail['smtp_password'],
+                $mail['smtp_encryption'],
+                $userId,
+            ]);
 
-        if ($scheduleChanged) {
-            // Rebuild the future: future paychecks go (their allocations
-            // cascade), future unpaid occurrences go. Paid history stays.
-            // The next dashboard load regenerates and re-allocates.
-            $pdo->prepare('DELETE FROM paychecks WHERE user_id = ? AND pay_date >= ?')
-                ->execute([$userId, $todayStr]);
-            $pdo->prepare('DELETE FROM bill_occurrences WHERE user_id = ? AND paid = 0 AND due_date >= ?')
-                ->execute([$userId, $todayStr]);
-            flash('Schedule changed — upcoming paychecks and bill occurrences were rebuilt. '
-                . 'Check the anchor dates on any every-N-paychecks bills.', 'warning');
+            if ($scheduleChanged) {
+                ScheduleTransitionService::reconcile($pdo, $userId, $new, $today);
+            } elseif ($income !== (string) $old['default_income']) {
+                $pdo->prepare(
+                    'UPDATE paychecks SET amount = ? WHERE user_id = ? AND pay_date >= ? AND amount_overridden = 0'
+                )->execute([$income, $userId, $todayStr]);
+            }
+
+            $pdo->commit();
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
         }
 
-        // A new default income applies to future paychecks that still carry
-        // the old default; per-paycheck overrides are preserved.
-        if ($income !== (string) $old['default_income'] && !$scheduleChanged) {
-            $pdo->prepare(
-                'UPDATE paychecks SET amount = ? WHERE user_id = ? AND pay_date >= ? AND amount = ?'
-            )->execute([$income, $userId, $todayStr, (string) $old['default_income']]);
+        if ($scheduleChanged) {
+            flash('Schedule changed — upcoming schedule dates were updated in place. '
+                . 'Paid bills, allocations, skips, and amount overrides were preserved.', 'warning');
         }
 
         flash('Settings saved.');

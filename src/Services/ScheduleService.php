@@ -101,7 +101,7 @@ final class ScheduleService
         }
 
         $today = new DateTimeImmutable('today');
-        $from = $today->modify('first day of this month');
+        $from = self::generationStart($settings, $today);
         $to = $today->modify('+' . self::windowDays($settings) . ' days');
 
         $payDates = self::payDates($settings, $from, $to);
@@ -134,6 +134,16 @@ final class ScheduleService
 
         return $row ?: null;
     }
+
+    /** @param array<string, mixed> $settings */
+    public static function generationStart(array $settings, DateTimeImmutable $today): DateTimeImmutable
+    {
+        $monthStart = $today->modify('first day of this month')->setTime(0, 0);
+        $effective = parse_date((string) ($settings['schedule_effective_date'] ?? ''));
+
+        return $effective !== null && $effective > $monthStart ? $effective : $monthStart;
+    }
+
 
     /**
      * Anchor + n*step series (weekly/biweekly), covering [$from, $to].

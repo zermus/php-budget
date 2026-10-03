@@ -156,7 +156,7 @@ final class DashboardController
         }
 
         $stmt = Database::pdo()->prepare(
-            'UPDATE paychecks SET amount = ? WHERE id = ? AND user_id = ?'
+            'UPDATE paychecks SET amount = ?, amount_overridden = 1 WHERE id = ? AND user_id = ?'
         );
         $stmt->execute([$amount, $paycheckId, $userId]);
 

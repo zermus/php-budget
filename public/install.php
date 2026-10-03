@@ -33,12 +33,19 @@ $migrator = new Migrator($pdo);
 $version = $migrator->currentVersion();
 $hasUser = $installer->firstUserExists($pdo, $migrator);
 $needsUpgrade = $version > 0 && $version < App::SCHEMA_VERSION;
+$setupToken = (string) App::config('setup_token', '');
 
 // Upgrading an existing install requires a signed-in administrator, so a
 // stranger can't run migrations before the owner has taken a backup.
 // Before 0.3 there were no roles and every account administered its own.
-$canUpgrade = $needsUpgrade && Auth::user() !== null
-    && (!$migrator->columnExists('users', 'role') || Auth::role() === 'admin');
+$authenticated = Auth::user() !== null;
+$roleColumnExists = $needsUpgrade && $migrator->columnExists('users', 'role');
+$canUpgrade = $installer->upgradeAuthorized(
+    $needsUpgrade,
+    $authenticated,
+    $roleColumnExists,
+    $authenticated && Auth::role() === 'admin'
+);
 
 // ---------------------------------------------------------------- POST --
 
@@ -57,13 +64,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($action === 'install' && !$hasUser) {
-        if ($version < App::SCHEMA_VERSION) {
-            $migrator->migrate();
+        $providedToken = (string) ($_POST['setupToken'] ?? '');
+        if (!$installer->setupAuthorized($setupToken, $providedToken)) {
+            http_response_code(403);
+            echo View::render('install/form', [
+                'title' => 'Install Budget App',
+                'error' => 'The setup token is invalid or is not configured.',
+                'old'   => $_POST,
+            ]);
+            exit;
         }
 
         $userId = null;
-        $error = $installer->createUser(
+        $error = $installer->installFirstOwner(
             $pdo,
+            $migrator,
+            $setupToken,
+            $providedToken,
             input_string('email'),
             (string) ($_POST['password'] ?? ''),
             (string) ($_POST['verifyPassword'] ?? ''),
