@@ -152,8 +152,8 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
             </div>
         </div>
 
-        <p class="empty-note">Changing the schedule rebuilds upcoming paychecks and unpaid bill
-            occurrences. Paid history is kept.</p>
+        <p class="empty-note">Changing the schedule moves upcoming generated dates in place where
+            possible. Paid history, allocations, skips, and amount overrides are kept.</p>
 
         <button type="submit" class="btn primary">Save Settings</button>
 

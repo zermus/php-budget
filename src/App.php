@@ -7,7 +7,7 @@ namespace App;
 final class App
 {
     public const VERSION = '0.6-beta';
-    public const SCHEMA_VERSION = 6;
+    public const SCHEMA_VERSION = 7;
 
     /** @var array<string, mixed> */
     private static array $config = [];

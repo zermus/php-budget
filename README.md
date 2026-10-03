@@ -47,16 +47,18 @@ php-budget/
 
 1. Extract the tarball on your server.
 2. Copy `config.sample.php` to `config.php` and fill in the database
-   credentials, `base_url`, and timezone. The database user needs permission
-   to create the database (or create it yourself first). Email is configured
-   later, in the app.
+   credentials, `base_url`, timezone, and a random `setup_token`. Generate one
+   with `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`. The database user
+   needs permission to create the database (or create it yourself first).
+   Email is configured later, in the app.
 3. Point your web server at the app (see Deployment modes below).
-4. Open `https://your.site/install.php` in a browser. The installer creates
-   the schema, asks for your email and password (the first user account),
-   and can optionally seed a starter budget.
-5. Add the reminder cron entry (shown by the installer, see below), then
-   delete `public/install.php` if you like — it refuses to reinstall either
-   way.
+4. Open `https://your.site/install.php` in a browser. Enter the private setup
+   token from `config.php`; the installer then creates the schema, asks for
+   your email and password (the first user account), and can optionally seed
+   a starter budget. Without that token, a public visitor cannot claim it.
+5. Remove `setup_token` from `config.php`, add the reminder cron entry (shown
+   by the installer, see below), then delete `public/install.php` if you like —
+   it refuses to reinstall either way.
 
 ## Deployment modes
 
@@ -160,8 +162,13 @@ for anyone in the household from the Users page.
   every-N-paychecks bill is anchored to the first paycheck it applies to,
   which fixes its phase — e.g. two sets of bills alternating between
   biweekly checks are two anchors one paycheck apart.
-- Editing a bill's amount or recurrence, or changing the pay schedule,
-  rebuilds upcoming unpaid occurrences; paid history is always kept.
+- Changing the pay schedule reconciles upcoming generated dates in place.
+  Paid history, allocations, split/reassigned bills, skips, edited amounts,
+  paycheck overrides, and every-N phase are preserved. Protected checks that
+  no longer land on the new schedule remain visible rather than being deleted.
+  Overrides created before version 0.7 can only be identified when their amount
+  differs from the then-current default; equal-to-default legacy overrides are
+  indistinguishable from generated values.
 
 ## Upgrading from a previous version
 

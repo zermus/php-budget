@@ -22,6 +22,11 @@ return [
     // public/ deploy (document root = public/):   https://budget.your.website.com/
     'base_url' => 'https://your.website.com/budget/',
 
+    // Authorizes the one-time creation of the first account owner. Generate a
+    // random value, keep it private, and remove this entry after installation:
+    //   php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+    'setup_token' => '',
+
     // All dates (pay dates, due dates, "today") use this timezone.
     'timezone' => 'America/New_York',
 

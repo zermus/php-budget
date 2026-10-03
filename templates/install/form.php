@@ -6,6 +6,10 @@
         <?= Csrf::field() ?>
         <input type="hidden" name="action" value="install">
         <div class="field">
+            <label for="setupToken">Setup token from <code>config.php</code>:</label>
+            <input type="password" id="setupToken" name="setupToken" required autocomplete="off">
+        </div>
+        <div class="field">
             <label for="email">Email:</label>
             <input type="email" id="email" name="email" required value="<?= e($old['email'] ?? '') ?>">
         </div>

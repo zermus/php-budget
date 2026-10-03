@@ -97,6 +97,7 @@ final class OccurrenceService
                 // The anchor marks the first paycheck this bill applies to and
                 // fixes its phase in the cycle. Extend the sequence back to the
                 // anchor so the phase is computed against the real series.
+                $from = max($from, ScheduleService::generationStart($settings, $from));
                 $seqFrom = min($from, parse_date($anchor));
                 $seq = array_column(ScheduleService::payDates($settings, $seqFrom, $to), 'date');
 
