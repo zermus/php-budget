@@ -3,7 +3,7 @@
 # Run from the project root on a machine with composer + tar.
 set -euo pipefail
 
-VERSION="0.6-beta"
+VERSION="0.7-beta"
 STAGE="php-budget-${VERSION}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT="${ROOT}/releases"
