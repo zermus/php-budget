@@ -119,13 +119,28 @@ currently in the form — saved or not — and reports the real failure reason
 (e.g. "Could not connect to SMTP host") if it doesn't work. SMTP gives up
 after 10 seconds rather than hanging.
 
-The `mail` block in `config.php` is an optional fallback used only for
-fields left blank in Settings; `log_path` is the one setting that still
-lives there.
+The `mail` block in `config.php` provides a server-managed SMTP profile only
+when **all** account SMTP fields are NULL. Any account SMTP override selects
+an account-only profile: missing values use local host/port 25, no encryption
+and no authentication, never server credentials. Configure account profiles
+completely. **Compatibility:** older mixed account/server profiles may stop
+delivering until reconfigured. Transport and sender fields still fall back
+individually; `log_path` remains server-managed.
 
-With `app_key` set in `config.php`, the SMTP password is stored encrypted
-(see Security notes below); without it, it is stored in plain text, and
-Settings → Email shows a key you can paste into `config.php`.
+A blank password retains the saved **account** password only if canonical host,
+port, encryption and username are unchanged. Connection changes require a
+replacement password for authenticated profiles. To use an unauthenticated
+relay, blank the username and explicitly remove the saved password. Save and
+test-send use the same validation.
+
+New password storage requires a valid 32-byte base64 `app_key` in `config.php`
+and OpenSSL with AES-256-GCM support; unavailable encryption rejects the change
+without saving settings. Legacy plaintext remains readable and migrates on
+Settings access when encryption is available. Migration failures leave the
+stored value intact and recovery controls accessible. Back up the key securely:
+if it is lost, restore it or configure a valid key and re-enter the password.
+Unreadable saved passwords must be replaced or explicitly cleared; they never
+fall back to server passwords. Stored passwords and keys are not shown in Settings.
 
 ## Users
 
@@ -190,8 +205,8 @@ nobody else can run migrations on your install.
 - **Headers:** every page forbids framing (`X-Frame-Options`, CSP
   `frame-ancestors`) and sends `nosniff` and `Referrer-Policy: same-origin`.
 - **SMTP password encryption:** set `app_key` in `config.php` (see
-  `config.sample.php`; Settings → Email also shows a ready-made key) and the
-  SMTP password is stored encrypted with AES-256-GCM. A database dump or
+  `config.sample.php`) and enable OpenSSL AES-256-GCM support. These are
+  required for new SMTP password writes. A database dump or
   backup then no longer reveals your relay password. The key sits in
   `config.php` alongside the database credentials, so this doesn't protect
   against someone who can read your files. Back the key up: without it a

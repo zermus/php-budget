@@ -12,9 +12,7 @@ namespace App;
  * the database credentials, outside the database. Stored form:
  * "enc:v1:" + base64(iv . tag . ciphertext).
  *
- * Without a valid key (or the openssl extension) values are stored as they
- * were before 0.6, and decrypt() passes legacy plaintext straight through,
- * so nothing breaks while an install is between the two.
+ * New writes require encryption; legacy plaintext remains readable for migration.
  */
 final class Secrets
 {
@@ -33,18 +31,22 @@ final class Secrets
         return $value !== null && str_starts_with($value, self::PREFIX);
     }
 
-    /** Encrypt for storage; returns the plaintext unchanged when no key is configured. */
+    /** Encrypt for storage; refuse writes when encryption is unavailable. */
     public static function encrypt(string $plaintext): string
     {
         $key = self::key();
         if ($key === null) {
-            return $plaintext;
+            throw new \RuntimeException('Password encryption is unavailable.');
         }
 
-        $iv = random_bytes(self::IV_BYTES);
-        $tag = '';
-        $ciphertext = openssl_encrypt($plaintext, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv, $tag, '', self::TAG_BYTES);
-        if ($ciphertext === false) {
+        try {
+            $iv = random_bytes(self::IV_BYTES);
+            $tag = '';
+            $ciphertext = openssl_encrypt($plaintext, self::CIPHER, $key, OPENSSL_RAW_DATA, $iv, $tag, '', self::TAG_BYTES);
+            if ($ciphertext === false) {
+                throw new \RuntimeException();
+            }
+        } catch (\Throwable $e) {
             throw new \RuntimeException('Could not encrypt a secret.');
         }
 
@@ -87,7 +89,9 @@ final class Secrets
 
     private static function key(): ?string
     {
-        if (!function_exists('openssl_encrypt')) {
+        if (!function_exists('openssl_encrypt') || !function_exists('openssl_decrypt')
+            || !function_exists('openssl_get_cipher_methods')
+            || !in_array(self::CIPHER, openssl_get_cipher_methods(), true)) {
             return null;
         }
 

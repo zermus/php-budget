@@ -24,9 +24,8 @@ final class Mailer
     }
 
     /**
-     * Mail settings for an account: what the owner saved under Settings,
-     * falling back per field to config.php for installs that predate 0.4
-     * (or that prefer to keep mail in the config file).
+     * Mail settings for an account. SMTP credentials and connection details
+     * always come from one profile, never a mixture of account and server.
      *
      * @param array<string, mixed>|null $settings a user_settings row
      * @return array<string, mixed>
@@ -41,16 +40,24 @@ final class Mailer
 
         $settings ??= [];
 
+        $account = false;
+        foreach (['smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_password'] as $field) {
+            $account = $account || ($settings[$field] ?? null) !== null;
+        }
+        $smtp = static fn (string $field, mixed $default): mixed => $account
+            ? ($settings['smtp_' . $field] ?? $default)
+            : App::config('mail.smtp.' . $field, $default);
+
         return [
             'transport'  => $pick($settings['mail_transport'] ?? null, 'mail.transport', 'smtp'),
             'from'       => $pick($settings['mail_from'] ?? null, 'mail.from', self::defaultFrom()),
             'from_name'  => $pick($settings['mail_from_name'] ?? null, 'mail.from_name', 'Budget App'),
-            'host'       => $pick($settings['smtp_host'] ?? null, 'mail.smtp.host', '127.0.0.1'),
-            'port'       => (int) ($settings['smtp_port'] ?? 0)
-                ?: (int) App::config('mail.smtp.port', 25),
-            'username'   => $pick($settings['smtp_username'] ?? null, 'mail.smtp.username', ''),
-            'password'   => $pick(Secrets::decrypt($settings['smtp_password'] ?? null), 'mail.smtp.password', ''),
-            'encryption' => $pick($settings['smtp_encryption'] ?? null, 'mail.smtp.encryption', 'none'),
+            'host'       => $smtp('host', '127.0.0.1'),
+            'port'       => (int) $smtp('port', 25) ?: 25,
+            'username'   => $smtp('username', ''),
+            'password'   => $account ? (Secrets::decrypt($settings['smtp_password'] ?? null) ?? '')
+                : App::config('mail.smtp.password', ''),
+            'encryption' => $smtp('encryption', 'none'),
             'log_path'   => App::config('mail.log_path', APP_ROOT . '/mail.log'),
         ];
     }
