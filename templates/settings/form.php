@@ -7,7 +7,7 @@ use App\Secrets;
 $type = (string) ($settings['schedule_type'] ?? 'biweekly');
 $storedPassword = $settings['smtp_password'] ?? null;
 $passwordUnreadable = Secrets::isEncrypted($storedPassword) && Secrets::decrypt($storedPassword) === null;
-// What mail will actually use: saved values, falling back to config.php.
+// SMTP uses either the complete account profile or the server profile.
 $effectiveMail = Mailer::settingsFor($settings);
 $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
 ?>
@@ -97,6 +97,9 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
                    value="<?= e((string) ($settings['mail_from_name'] ?? '')) ?>">
         </div>
 
+        <p class="empty-note">SMTP settings are one complete profile: any account SMTP override disables
+            all server SMTP fallbacks. Supply the host, port, encryption and any authentication together.
+            Existing mixed account/server configurations may need reconfiguration.</p>
         <div class="mail-fields">
             <div class="field two-up">
                 <div>
@@ -128,18 +131,23 @@ $days = json_decode((string) ($settings['days_of_month'] ?? '[]'), true) ?: [];
             </div>
             <?php if (!Secrets::available()): ?>
             <div class="message warning">
-                The SMTP password is stored unencrypted because config.php has no <code>app_key</code>.
-                To encrypt it, add this line to config.php, then reload this page:<br>
-                <code>'app_key' =&gt; '<?= e(Secrets::generateKey()) ?>',</code><br>
-                Keep a copy with your database backups: without it a saved password can't be read.
+                Saving passwords requires a valid <code>app_key</code> in config.php and OpenSSL
+                with AES-256-GCM support. See config.sample.php for key generation instructions.
+                Back up the key securely with your database backups. Existing legacy passwords
+                are migrated when encryption becomes available.
             </div>
             <?php elseif ($passwordUnreadable): ?>
             <div class="message error">
                 The saved SMTP password can't be decrypted — <code>app_key</code> in config.php has
-                changed. Type the password again to re-save it.
+                changed or is unavailable. Restore the original key, replace the password after fixing
+                encryption, or clear both username and password for an unauthenticated relay.
             </div>
             <?php endif; ?>
             <div class="field">
+                <p class="empty-note">Blank retains only the saved account password, and only when host,
+                    port, encryption and username are unchanged. Changing any of these requires a replacement
+                    password. To remove authentication, blank the username and check Remove the saved password.
+                    Server passwords are never copied into account settings.</p>
                 <label for="smtpPassword">SMTP password:</label>
                 <input type="password" id="smtpPassword" name="smtpPassword" autocomplete="new-password"
                        placeholder="<?= !empty($settings['smtp_password']) ? 'unchanged — type to replace' : '' ?>">
