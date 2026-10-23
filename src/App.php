@@ -6,7 +6,7 @@ namespace App;
 
 final class App
 {
-    public const VERSION = '0.7-beta';
+    public const VERSION = '0.8-beta';
     public const SCHEMA_VERSION = 8;
 
     /** @var array<string, mixed> */
