@@ -200,3 +200,20 @@ nobody else can run migrations on your install.
 ## License
 
 Apache License 2.0 — see LICENSE. © 2026 Cody Gee.
+
+### Unpaid paycheck carryovers
+
+When the dashboard allocates bills, stored unpaid, non-skipped allocations on
+older paychecks move into the latest paycheck dated on or before today. Existing
+amounts there merge once; future split portions and paid bills stay put. Original
+bill due dates remain unchanged, and unpaid carryovers show a red “carried from”
+label. Historical paycheck totals decrease as those unpaid amounts move.
+
+The label retains only the earliest source paycheck date, not an immutable
+transfer ledger. Manually reassigning or re-splitting clears that provenance.
+Paid carried amounts stay on their payment paycheck on subsequent rollovers.
+Payment still applies to the whole occurrence, including all its split portions:
+Bills decreases, but Remaining does not increase because the money is allocated.
+
+Only stored allocations carry forward; this does not backfill missing historical
+generation. Skipping, deleting, or deactivating bills can remove visibility.

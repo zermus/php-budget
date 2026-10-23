@@ -39,7 +39,7 @@ $isAdmin = Auth::canManageBills();
         if (!empty($row['paid'])) {
             $classes[] = 'paid';
         }
-        if ($row['due_date'] < $today && empty($row['paid'])) {
+        if (($row['due_date'] < $today || !empty($row['carried_from_date'])) && empty($row['paid'])) {
             $classes[] = 'overdue';
         }
         $isSplit = (int) $row['alloc_count'] > 1;
@@ -58,6 +58,9 @@ $isAdmin = Auth::canManageBills();
                     <?= e($row['bill_name']) ?>
                 <?php endif; ?>
                 <small class="due-note<?= $isLate ? ' late' : '' ?>"<?= $isLate ? ' title="This paycheck lands after the due date"' : '' ?>>due <?= e(short_date((string) $row['due_date'])) ?></small>
+                <?php if (!empty($row['carried_from_date'])): ?>
+                    <small class="due-note<?= empty($row['paid']) ? ' late' : '' ?>">carried from <?= e(short_date((string) $row['carried_from_date'])) ?></small>
+                <?php endif; ?>
                 <?php if ($isSplit): ?>
                     <span class="split-tag" title="Split across paychecks — this check pays $<?= e(money((string) $row['alloc_amount'])) ?> of $<?= e(money((string) $row['occ_amount'])) ?>">split</span>
                 <?php endif; ?>
