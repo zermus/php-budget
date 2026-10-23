@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8-beta
+
+SMTP profile security and unpaid-bill carryovers. Back up the database and
+`config.php`, including the existing `app_key`, before upgrading. Sign in as an
+administrator and open `install.php` to upgrade schema 7 to 8. Migration 008
+adds nullable `allocations.carried_from_date`.
+
+### Security and SMTP compatibility
+
+- SMTP connection details and credentials now come from one profile: either
+  the account's settings or the server configuration, never a mixture. Existing
+  partial account profiles may need reconfiguration; review Settings → Email
+  and verify delivery after upgrading.
+- Changing the host, port, encryption, or username requires a replacement
+  password rather than reusing the old credential. For an explicitly
+  unauthenticated relay, clear both username and password.
+- New SMTP password writes require OpenSSL AES-256-GCM and a valid base64
+  `app_key` decoding to 32 bytes. Encryption failures reject the save instead
+  of storing plaintext. Unreadable encrypted passwords must be replaced or
+  explicitly cleared; preserve the existing key when upgrading.
+
+### Unpaid-bill carryovers
+
+- Unpaid, non-skipped stored allocations on older paychecks move and merge
+  once into the latest paycheck on or before today. Paid allocations and
+  future split portions stay put, and original bill due dates remain unchanged.
+  Ungenerated occurrences are not backfilled.
+- Red carryover labels show the earliest source paycheck date. Moving these
+  allocations changes historical paycheck totals; there is no transfer ledger.
+  Manual splits or reassignments clear carryover provenance.
+- Payment still applies to the whole occurrence, including split portions.
+  Bills decreases while Remaining does not increase, because the money stays
+  allocated.
+
 ## 0.7-beta
 
 Safer installation and pay-schedule changes. Requires a database upgrade (sign
