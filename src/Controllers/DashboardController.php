@@ -69,7 +69,7 @@ final class DashboardController
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
 
             $stmt = $pdo->prepare(
-                "SELECT a.paycheck_id, a.amount AS alloc_amount,
+                "SELECT a.paycheck_id, a.amount AS alloc_amount, a.carried_from_date,
                         o.id AS occurrence_id, o.due_date, o.amount AS occ_amount,
                         o.paid, o.paid_source, b.name AS bill_name,
                         (SELECT COUNT(*) FROM allocations a2 WHERE a2.occurrence_id = o.id) AS alloc_count

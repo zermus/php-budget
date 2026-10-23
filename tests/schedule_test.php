@@ -16,6 +16,7 @@ define('APP_ROOT', dirname(__DIR__));
 
 require APP_ROOT . '/src/helpers.php';
 require APP_ROOT . '/src/App.php';
+require APP_ROOT . '/src/Secrets.php';
 require APP_ROOT . '/src/Installer/Migrator.php';
 require APP_ROOT . '/src/Services/ScheduleService.php';
 require APP_ROOT . '/src/Services/OccurrenceService.php';
@@ -335,6 +336,9 @@ function runDatabaseChecks(array $config): void
             $concurrentDatabase = databaseName('concurrent');
             $databases[] = $concurrentDatabase;
             $server->exec("CREATE DATABASE `{$concurrentDatabase}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            unset($migrator);
+            $pdo = null;
+            $server = null;
             $children = [];
             foreach (['first', 'second'] as $name) {
                 $pid = pcntl_fork();
@@ -365,6 +369,9 @@ function runDatabaseChecks(array $config): void
                     $successfulChildren++;
                 }
             }
+            $server = serverPdo($config);
+            $pdo = databasePdo($config, $database);
+            $migrator = new Migrator($pdo);
             $concurrentPdo = databasePdo($config, $concurrentDatabase);
             check(
                 $successfulChildren === 1
@@ -511,8 +518,8 @@ function runDatabaseChecks(array $config): void
         $legacyMigrator->migrate();
         check(
             (int) $legacy->query('SELECT amount_overridden FROM paychecks')->fetchColumn() === 1
-            && $legacyMigrator->currentVersion() === 7,
-            'v7 migration marks identifiable legacy overrides and reaches schema version 7'
+            && $legacyMigrator->currentVersion() === App::SCHEMA_VERSION,
+            'v7 migration marks identifiable legacy overrides and reaches the current schema version'
         );
     } finally {
         foreach (array_reverse($databases) as $database) {
