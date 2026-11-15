@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9-beta - 2026-11-15
+
+Application-specific sessions and consistent sign-in accounting. Back up the
+database and `config.php`, including the existing `app_key`, before upgrading.
+Retain that configuration when extracting the release. No migrations, new
+configuration keys, or requirement changes are needed; schema version stays 8.
+
+### Sign-in
+
+- php-budget now uses an application-specific session cookie. Existing users
+  must sign in again after upgrading.
+- Failed-login accounting is consistent for equivalent account email spellings.
+- Multiple php-budget installations on one host still share the cookie name
+  and root path; their sessions are not isolated from each other.
+
 ## 0.8-beta
 
 SMTP profile security and unpaid-bill carryovers. Back up the database and
