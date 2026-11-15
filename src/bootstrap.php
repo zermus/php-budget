@@ -86,6 +86,8 @@ if (PHP_SAPI !== 'cli') {
 // --- Session ------------------------------------------------------------
 
 if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {
+    session_name('PHPBUDGETSESSID');
+
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
 
