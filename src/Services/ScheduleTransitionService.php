@@ -8,8 +8,8 @@ use PDO;
 final class ScheduleTransitionService
 {
     /**
-     * Reconcile generated schedule rows in-place so their IDs, allocations,
-     * paid state, skips, and amount overrides survive a schedule change.
+     * Preserve exact and moved rows, paid-protected dates, and past history.
+     * Removed dates discard unpaid customizations, including whole splits.
      * The caller owns the surrounding transaction.
      *
      * @param array<string, mixed> $newSettings
@@ -66,21 +66,23 @@ final class ScheduleTransitionService
         DateTimeImmutable $to
     ): void {
         $stmt = $pdo->prepare(
-            'SELECT p.id, p.pay_date, p.amount, p.amount_overridden,
-                    EXISTS(
-                        SELECT 1 FROM allocations a
-                        INNER JOIN bill_occurrences o ON o.id = a.occurrence_id
-                        WHERE a.paycheck_id = p.id AND a.user_id = ? AND o.user_id = ? AND o.paid = 1
-                    ) AS has_paid
+            'SELECT p.id, p.pay_date, p.amount, p.amount_overridden
              FROM paychecks p
              WHERE p.user_id = ? AND p.pay_date >= ? ORDER BY p.pay_date FOR UPDATE'
         );
-        $stmt->execute([$userId, $userId, $userId, $from->format('Y-m-d')]);
+        $stmt->execute([$userId, $from->format('Y-m-d')]);
+        $paychecks = $stmt->fetchAll();
+        $paid = $pdo->prepare(
+            'SELECT o.paid FROM bill_occurrences o
+             INNER JOIN allocations a ON a.occurrence_id = o.id
+             WHERE a.paycheck_id = ? AND a.user_id = ? AND o.user_id = ? FOR UPDATE'
+        );
         $byDate = [];
         $fixedDates = [];
-        foreach ($stmt->fetchAll() as $row) {
+        foreach ($paychecks as $row) {
+            $paid->execute([(int) $row['id'], $userId, $userId]);
             $date = (string) $row['pay_date'];
-            if ((bool) $row['has_paid']) {
+            if (in_array(1, $paid->fetchAll(PDO::FETCH_COLUMN))) {
                 $fixedDates[] = $date;
             } else {
                 $byDate[$date] = $row;
@@ -114,13 +116,23 @@ final class ScheduleTransitionService
             ]);
         }
 
-        $delete = $pdo->prepare(
-            'DELETE p FROM paychecks p
-             LEFT JOIN allocations a ON a.paycheck_id = p.id AND a.user_id = ?
-             WHERE p.id = ? AND p.user_id = ? AND a.id IS NULL AND p.amount_overridden = 0'
+        $affected = $pdo->prepare(
+            'SELECT o.id FROM bill_occurrences o
+             WHERE o.user_id = ? AND o.paid = 0 AND EXISTS (
+                 SELECT 1 FROM allocations a WHERE a.occurrence_id = o.id
+                 AND a.paycheck_id = ? AND a.user_id = ?
+             ) FOR UPDATE'
         );
+        $clear = $pdo->prepare('DELETE FROM allocations WHERE occurrence_id = ? AND user_id = ?');
+        $delete = $pdo->prepare('DELETE FROM paychecks WHERE id = ? AND user_id = ?');
         foreach ($plan['excess'] as $date) {
-            $delete->execute([$userId, (int) $byDate[$date]['id'], $userId]);
+            $paycheckId = (int) $byDate[$date]['id'];
+            $affected->execute([$userId, $paycheckId, $userId]);
+            foreach ($affected->fetchAll(PDO::FETCH_COLUMN) as $occurrenceId) {
+                // Clear the entire unpaid split, not just its removed portion.
+                $clear->execute([(int) $occurrenceId, $userId]);
+            }
+            $delete->execute([$paycheckId, $userId]);
         }
 
         $insert = $pdo->prepare(
@@ -157,8 +169,7 @@ final class ScheduleTransitionService
         $bills->execute([$userId]);
 
         $existing = $pdo->prepare(
-            'SELECT o.id, o.due_date, o.amount, o.paid, o.skipped,
-                    EXISTS(SELECT 1 FROM allocations a WHERE a.occurrence_id = o.id AND a.user_id = ?) AS allocated
+            'SELECT o.id, o.due_date, o.paid
              FROM bill_occurrences o
              WHERE o.user_id = ? AND o.bill_id = ? AND o.due_date >= ?
              ORDER BY o.due_date FOR UPDATE'
@@ -168,7 +179,7 @@ final class ScheduleTransitionService
         );
         $delete = $pdo->prepare(
             'DELETE FROM bill_occurrences
-             WHERE id = ? AND user_id = ? AND paid = 0 AND skipped = 0 AND amount = ?'
+             WHERE id = ? AND user_id = ? AND paid = 0'
         );
         $insert = $pdo->prepare(
             'INSERT INTO bill_occurrences (user_id, bill_id, due_date, amount) VALUES (?, ?, ?, ?)'
@@ -176,7 +187,7 @@ final class ScheduleTransitionService
 
         foreach ($bills->fetchAll() as $bill) {
             $billId = (int) $bill['id'];
-            $existing->execute([$userId, $userId, $billId, $from->format('Y-m-d')]);
+            $existing->execute([$userId, $billId, $from->format('Y-m-d')]);
             $rows = $existing->fetchAll();
             $byDate = [];
             $fixedDates = [];
@@ -196,9 +207,7 @@ final class ScheduleTransitionService
             }
             foreach ($plan['excess'] as $date) {
                 $row = $byDate[$date];
-                if (!(bool) $row['allocated']) {
-                    $delete->execute([(int) $row['id'], $userId, (string) $bill['default_amount']]);
-                }
+                $delete->execute([(int) $row['id'], $userId]);
             }
             foreach ($plan['missing'] as $date) {
                 $insert->execute([$userId, $billId, $date, (string) $bill['default_amount']]);

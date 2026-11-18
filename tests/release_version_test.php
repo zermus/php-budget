@@ -21,12 +21,13 @@ function check(bool $ok, string $label): void
     $failures += (int) !$ok;
 }
 
+check(App::SCHEMA_VERSION === 9 && App::VERSION === '0.9-beta', 'schema 9 without release bump');
 $version = App::VERSION;
 check(preg_match('/^\d+\.\d+-beta$/D', $version) === 1, 'runtime release version format');
 $files = [
     'build-release.sh' => '/^VERSION="([^"]+)"$/m',
     'README.md' => '/^A simple self-hosted paycheck budgeting app\. Version ([^\s]+)\.$/m',
-    'CHANGELOG.md' => '/\A# Changelog\s+## ([^\s]+)(?: - \d{4}-\d{2}-\d{2})?\R/',
+    'CHANGELOG.md' => '/\A# Changelog\s+(?:## Unreleased\s+[\s\S]*?)?## ([^\s]+)(?: - \d{4}-\d{2}-\d{2})?\R/',
 ];
 foreach ($files as $file => $pattern) {
     preg_match($pattern, file_get_contents($root . '/' . $file), $match);

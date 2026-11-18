@@ -68,7 +68,9 @@ final class UserController
         $reminders = !empty($_POST['receiveReminders']) ? 1 : 0;
 
         $error = null;
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        if (mb_strlen($email) > 190) {
+            $error = 'Email must be at most 190 characters.';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Please enter a valid email address.';
         } elseif (!in_array($role, self::ASSIGNABLE_ROLES, true)) {
             $error = 'Choose a role for this user.';

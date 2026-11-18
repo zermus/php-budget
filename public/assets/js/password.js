@@ -13,20 +13,20 @@ document.addEventListener('DOMContentLoaded', function () {
         var value = password.value;
         var messages = [];
 
-        if (value.length < 8) {
+        if (Array.from(value).length < 8) {
             messages.push('at least 8 characters');
         }
-        if (!/[a-z]/.test(value)) {
+        if (!/\p{Ll}/u.test(value)) {
             messages.push('one lowercase letter');
         }
-        if (!/[A-Z]/.test(value)) {
+        if (!/\p{Lu}/u.test(value)) {
             messages.push('one uppercase letter');
         }
         if (!/\d/.test(value)) {
             messages.push('one number');
         }
-        if (!/[@$!%*?&]/.test(value)) {
-            messages.push('one special character (@, $, !, %, *, ?, or &)');
+        if (!/[^\p{L}\p{N}]/u.test(value)) {
+            messages.push('one non-letter/non-number character');
         }
 
         if (messages.length > 0) {

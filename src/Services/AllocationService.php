@@ -170,6 +170,9 @@ final class AllocationService
             if (!preg_match('/^\d+(\.\d{1,2})?$/', $amount) || (float) $amount <= 0) {
                 return 'Each split amount must be a positive dollar amount.';
             }
+            if ((float) $amount > 99999999.99) {
+                return 'Each split amount must be at most $99,999,999.99.';
+            }
             $totalCents += (int) round(((float) $amount) * 100);
         }
 

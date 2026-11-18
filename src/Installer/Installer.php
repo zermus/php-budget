@@ -118,6 +118,9 @@ final class Installer
         if ($email === '') {
             return 'Email is required.';
         }
+        if (mb_strlen($email) > 190) {
+            return 'Email must be at most 190 characters.';
+        }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return 'Please enter a valid email address.';
         }

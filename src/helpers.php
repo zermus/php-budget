@@ -106,7 +106,7 @@ function input_decimal(string $key, ?array $source = null): ?string
     $raw = input_string($key, $source);
     $raw = str_replace(['$', ',', ' '], '', $raw);
 
-    if ($raw === '' || !preg_match('/^\d+(\.\d{1,2})?$/', $raw)) {
+    if ($raw === '' || !preg_match('/^\d+(\.\d{1,2})?$/', $raw) || (float) $raw > 99999999.99) {
         return null;
     }
 
@@ -179,7 +179,7 @@ function describe_recurrence(array $bill): string
 function password_meets_policy(string $password): bool
 {
     return (bool) preg_match(
-        '/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/',
+        '/\A(?=.*\p{Ll})(?=.*\p{Lu})(?=.*[0-9])(?=.*[^\p{L}\p{N}]).{8,}\z/us',
         $password
     );
 }

@@ -17,6 +17,7 @@ final class Auth
     public static function login(array $user): void
     {
         session_regenerate_id(true);
+        unset($_SESSION['csrf_token']);
         $_SESSION['user_id'] = (int) $user['id'];
         $_SESSION['password_fp'] = self::passwordFingerprint((string) $user['password_hash']);
     }
