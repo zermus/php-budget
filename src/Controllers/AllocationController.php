@@ -28,7 +28,7 @@ final class AllocationController
         echo View::render('allocations/edit', [
             'title'       => 'Edit Allocation',
             'occurrence'  => $occurrence,
-            'paychecks'   => $this->windowPaychecks($userId),
+            'paychecks'   => $this->windowPaychecks($userId, (int) $occurrence['id']),
             'allocations' => $this->occurrenceAllocations((int) $occurrence['id'], $userId),
         ]);
     }
@@ -63,6 +63,10 @@ final class AllocationController
                 flash('Each paycheck can appear only once in a split.', 'error');
                 redirect('/allocations/edit?occurrence_id=' . (int) $occurrence['id']);
             }
+            if ((float) $amount > 99999999.99) {
+                flash('Each split amount must be at most $99,999,999.99.', 'error');
+                redirect('/allocations/edit?occurrence_id=' . (int) $occurrence['id']);
+            }
             $rows[$paycheckId] = $amount;
         }
 
@@ -92,19 +96,26 @@ final class AllocationController
     }
 
     /** @return list<array<string, mixed>> */
-    private function windowPaychecks(int $userId): array
+    private function windowPaychecks(int $userId, int $occurrenceId): array
     {
         $settings = ScheduleService::userSettings($userId) ?? [];
         $today = new DateTimeImmutable('today');
         $from = $today->modify('first day of this month')->format('Y-m-d');
+        $latest = Database::pdo()->prepare('SELECT MAX(pay_date) FROM paychecks WHERE user_id = ? AND pay_date <= ?');
+        $latest->execute([$userId, $today->format('Y-m-d')]);
+        $current = $latest->fetchColumn();
+        if ($current) {
+            $from = min($from, (string) $current);
+        }
         $to = $today->modify('+' . ScheduleService::windowDays($settings) . ' days')->format('Y-m-d');
 
         $stmt = Database::pdo()->prepare(
             'SELECT * FROM paychecks
-             WHERE user_id = ? AND pay_date BETWEEN ? AND ?
+             WHERE user_id = ? AND (pay_date BETWEEN ? AND ?
+                 OR id IN (SELECT paycheck_id FROM allocations WHERE occurrence_id = ? AND user_id = ?))
              ORDER BY pay_date'
         );
-        $stmt->execute([$userId, $from, $to]);
+        $stmt->execute([$userId, $from, $to, $occurrenceId, $userId]);
 
         return $stmt->fetchAll();
     }

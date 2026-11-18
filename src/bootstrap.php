@@ -86,14 +86,16 @@ if (PHP_SAPI !== 'cli') {
 // --- Session ------------------------------------------------------------
 
 if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {
+    ini_set('session.use_strict_mode', '1');
     session_name('PHPBUDGETSESSID');
+    $cookiePath = parse_url((string) App::config('base_url', '/'), PHP_URL_PATH) ?: '/';
 
     $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
         || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
 
     session_set_cookie_params([
         'lifetime' => 0,
-        'path'     => '/',
+        'path'     => $cookiePath,
         'secure'   => $secure,
         'httponly' => true,
         'samesite' => 'Lax',

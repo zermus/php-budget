@@ -57,8 +57,8 @@ final class BillController
         }
 
         $stmt = Database::pdo()->prepare(
-            'INSERT INTO bills (user_id, name, default_amount, recurrence_type, recurrence_value, notes)
-             VALUES (?, ?, ?, ?, ?, ?)'
+            'INSERT INTO bills (user_id, name, default_amount, recurrence_type, recurrence_value, notes, starts_on)
+             VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([
             Auth::dataUserId(),
@@ -67,6 +67,7 @@ final class BillController
             $fields['type'],
             $fields['value'],
             $fields['notes'],
+            (new DateTimeImmutable('today'))->format('Y-m-d'),
         ]);
 
         flash('Bill added.');
@@ -158,8 +159,8 @@ final class BillController
 
         $newActive = empty($bill['active']) ? 1 : 0;
         $pdo = Database::pdo();
-        $pdo->prepare('UPDATE bills SET active = ? WHERE id = ? AND user_id = ?')
-            ->execute([$newActive, (int) $bill['id'], $userId]);
+        $pdo->prepare('UPDATE bills SET active = ?, starts_on = CASE WHEN ? = 1 THEN ? ELSE starts_on END WHERE id = ? AND user_id = ?')
+            ->execute([$newActive, $newActive, (new DateTimeImmutable('today'))->format('Y-m-d'), (int) $bill['id'], $userId]);
 
         if ($newActive === 0) {
             // Deactivating clears upcoming unpaid occurrences; paid rows stay
@@ -200,6 +201,9 @@ final class BillController
 
         if ($name === '') {
             return [[], 'Name is required.'];
+        }
+        if (mb_strlen($name) > 190) {
+            return [[], 'Name must be at most 190 characters.'];
         }
         if ($amount === null || (float) $amount <= 0) {
             return [[], 'Enter a valid dollar amount.'];

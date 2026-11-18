@@ -43,88 +43,96 @@ $recipientStmt = $pdo->prepare(
 );
 
 $sent = 0;
+$failed = 0;
 
 foreach ($owners as $user) {
     $userId = (int) $user['id'];
 
-    // Keep the window fresh even if the user hasn't opened the dashboard.
-    ScheduleService::generateForUser($userId);
-    OccurrenceService::generateForUser($userId);
-    AllocationService::autoAllocate($userId);
+    try {
+        // Keep the window fresh even if the user hasn't opened the dashboard.
+        ScheduleService::generateForUser($userId);
+        OccurrenceService::generateForUser($userId);
+        AllocationService::autoAllocate($userId);
 
-    $leadDays = (int) $user['reminder_lead_days'];
-    $dueLimit = $today->modify("+{$leadDays} days")->format('Y-m-d');
+        $leadDays = (int) $user['reminder_lead_days'];
+        $dueLimit = $today->modify("+{$leadDays} days")->format('Y-m-d');
 
-    $stmt = $pdo->prepare(
-        'SELECT o.due_date, o.amount, b.name
-         FROM bill_occurrences o
-         INNER JOIN bills b ON b.id = o.bill_id
-         WHERE o.user_id = ? AND o.paid = 0 AND o.skipped = 0 AND o.due_date <= ?
-         ORDER BY o.due_date, b.name'
-    );
-    $stmt->execute([$userId, $dueLimit]);
-    $rows = $stmt->fetchAll();
+        $stmt = $pdo->prepare(
+            'SELECT o.due_date, o.amount, b.name
+             FROM bill_occurrences o
+             INNER JOIN bills b ON b.id = o.bill_id
+             WHERE o.user_id = ? AND o.paid = 0 AND o.skipped = 0 AND o.due_date <= ?
+             ORDER BY o.due_date, b.name'
+        );
+        $stmt->execute([$userId, $dueLimit]);
+        $rows = $stmt->fetchAll();
 
-    if ($rows === []) {
-        continue;
-    }
-
-    $overdue = array_values(array_filter($rows, static fn (array $r): bool => $r['due_date'] < $todayStr));
-    $dueSoon = array_values(array_filter($rows, static fn (array $r): bool => $r['due_date'] >= $todayStr));
-
-    $lines = [];
-    $total = 0.0;
-
-    if ($dueSoon !== []) {
-        $lines[] = 'Due soon:';
-        foreach ($dueSoon as $row) {
-            $lines[] = sprintf('  %s — $%s due %s', $row['name'], money((string) $row['amount']), $row['due_date']);
-            $total += (float) $row['amount'];
+        if ($rows === []) {
+            continue;
         }
+
+        $overdue = array_values(array_filter($rows, static fn (array $r): bool => $r['due_date'] < $todayStr));
+        $dueSoon = array_values(array_filter($rows, static fn (array $r): bool => $r['due_date'] >= $todayStr));
+
+        $lines = [];
+        $total = 0.0;
+
+        if ($dueSoon !== []) {
+            $lines[] = 'Due soon:';
+            foreach ($dueSoon as $row) {
+                $lines[] = sprintf('  %s — $%s due %s', $row['name'], money((string) $row['amount']), $row['due_date']);
+                $total += (float) $row['amount'];
+            }
+            $lines[] = '';
+        }
+
+        if ($overdue !== []) {
+            $lines[] = 'OVERDUE:';
+            foreach ($overdue as $row) {
+                $lines[] = sprintf('  %s — $%s was due %s', $row['name'], money((string) $row['amount']), $row['due_date']);
+                $total += (float) $row['amount'];
+            }
+            $lines[] = '';
+        }
+
+        $lines[] = sprintf('Total unpaid: $%s', money((string) $total));
         $lines[] = '';
-    }
+        $lines[] = 'Mark bills paid on your dashboard: ' . url('/dashboard');
 
-    if ($overdue !== []) {
-        $lines[] = 'OVERDUE:';
-        foreach ($overdue as $row) {
-            $lines[] = sprintf('  %s — $%s was due %s', $row['name'], money((string) $row['amount']), $row['due_date']);
-            $total += (float) $row['amount'];
+        $count = count($rows);
+        $subject = sprintf(
+            'Bill reminder: %d bill%s need%s attention',
+            $count,
+            $count === 1 ? '' : 's',
+            $count === 1 ? 's' : ''
+        );
+
+        // Mail settings the owner saved under Settings, falling back to config.php.
+        $mailSettings = Mailer::settingsFor($user);
+
+        // The owner plus any sub-user who has reminders switched on.
+        $recipients = [];
+        if (!empty($user['receive_reminders'])) {
+            $recipients[] = (string) $user['email'];
         }
-        $lines[] = '';
-    }
-
-    $lines[] = sprintf('Total unpaid: $%s', money((string) $total));
-    $lines[] = '';
-    $lines[] = 'Mark bills paid on your dashboard: ' . url('/dashboard');
-
-    $count = count($rows);
-    $subject = sprintf(
-        'Bill reminder: %d bill%s need%s attention',
-        $count,
-        $count === 1 ? '' : 's',
-        $count === 1 ? 's' : ''
-    );
-
-    // Mail settings the owner saved under Settings, falling back to config.php.
-    $mailSettings = Mailer::settingsFor($user);
-
-    // The owner plus any sub-user who has reminders switched on.
-    $recipients = [];
-    if (!empty($user['receive_reminders'])) {
-        $recipients[] = (string) $user['email'];
-    }
-    $recipientStmt->execute([$userId]);
-    foreach ($recipientStmt->fetchAll(PDO::FETCH_COLUMN) as $email) {
-        $recipients[] = (string) $email;
-    }
-
-    foreach ($recipients as $email) {
-        if (Mailer::send($email, $email, $subject, implode("\n", $lines), $mailSettings)) {
-            $sent++;
-        } else {
-            fwrite(STDERR, "Failed to send reminder to {$email}: " . (Mailer::lastError() ?? 'unknown error') . "\n");
+        $recipientStmt->execute([$userId]);
+        foreach ($recipientStmt->fetchAll(PDO::FETCH_COLUMN) as $email) {
+            $recipients[] = (string) $email;
         }
+
+        foreach ($recipients as $email) {
+            if (Mailer::send($email, $email, $subject, implode("\n", $lines), $mailSettings)) {
+                $sent++;
+            } else {
+                fwrite(STDERR, "Failed to send reminder to {$email}: " . (Mailer::lastError() ?? 'unknown error') . "\n");
+            }
+        }
+    } catch (\Throwable $e) {
+        $failed++;
+        fwrite(STDERR, "Budget owner {$userId} failed: " . $e->getMessage() . "\n");
     }
 }
 
-echo 'Reminders sent: ' . $sent . ' message(s) across ' . count($owners) . " budget(s) checked.\n";
+echo 'Reminders sent: ' . $sent . ' message(s) across ' . count($owners) . " budget(s) checked; $failed budget(s) failed.\n";
+
+exit($failed > 0 ? 1 : 0);

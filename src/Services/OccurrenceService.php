@@ -59,6 +59,10 @@ final class OccurrenceService
             return [];
         }
 
+        if ($bill['recurrence_type'] !== 'one_time' && !empty($bill['starts_on'])) {
+            $from = max($from, new DateTimeImmutable((string) $bill['starts_on']));
+        }
+
         switch ((string) $bill['recurrence_type']) {
             case 'monthly_day':
                 $day = (int) ($value['day'] ?? 0);

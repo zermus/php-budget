@@ -92,13 +92,72 @@ if ($m->tableExists('users')) {
 }
 try {
     $m->migrate();
-    check($m->currentVersion() === 8 && $m->columnExists('allocations', 'carried_from_date'), 'fresh schema reaches 8');
+    check($m->currentVersion() === 9 && $m->columnExists('allocations', 'carried_from_date'), 'fresh schema reaches 9');
     $pdo->exec('ALTER TABLE allocations DROP COLUMN carried_from_date');
     $m->setVersion(7);
     $m->migrate();
     $migration = require APP_ROOT . '/migrations/008_carry_forward.php';
     ($migration['up'])($pdo, $m);
-    check($m->currentVersion() === 8 && $m->migrate() === [], 'upgrade from 7 and direct migration rerun');
+    check($m->currentVersion() === 9 && $m->migrate() === [], 'upgrade from 7 and direct migration rerun');
+
+    $migration = require APP_ROOT . '/migrations/009_bill_starts_on.php';
+    ($migration['up'])($pdo, $m);
+    check($m->columnExists('bills', 'starts_on') && $m->migrate() === [], 'start-date migration rerun is safe');
+
+    [$editorUser, $editorChecks, $editorOcc] = fixture();
+    sql('DELETE FROM paychecks WHERE user_id=?', [$editorUser]);
+    $editorDates = [(new DateTimeImmutable('first day of this month'))->modify('-3 days')->format('Y-m-d'),
+        date('Y-m-d', strtotime('-400 days')), date('Y-m-d', strtotime('+400 days'))];
+    $editorIds = [];
+    foreach ($editorDates as $date) {
+        sql('INSERT INTO paychecks (user_id,pay_date,amount) VALUES (?,?,1000)', [$editorUser, $date]);
+        $editorIds[] = (int) $pdo->lastInsertId();
+    }
+    allocate($editorUser, $editorIds[1], $editorOcc, '40');
+    allocate($editorUser, $editorIds[2], $editorOcc, '60');
+    $controller = new App\Controllers\AllocationController();
+    $options = (new ReflectionMethod($controller, 'windowPaychecks'))->invoke($controller, $editorUser, $editorOcc);
+    check(array_column($options, 'id') === [$editorIds[1], $editorIds[0], $editorIds[2]], 'editor includes previous-month current and both outside-window split paychecks');
+    $before = rows($editorUser);
+    check(Allocation::saveSplit($editorOcc, [$editorIds[1] => '40', $editorIds[2] => '60'], $editorUser) === null
+        && rows($editorUser) === $before, 'unchanged outside-window split save retains selection');
+    check(Allocation::saveSplit($editorOcc, [$editorIds[1] => '100000000'], $editorUser) !== null
+        && rows($editorUser) === $before, 'oversized split rejected before mutation');
+
+    foreach (['weekly' => 'biweekly', 'biweekly' => 'weekly'] as $oldType => $newType) {
+        [$x, $xp, $xo] = fixture();
+        sql('DELETE FROM bill_occurrences WHERE user_id=?', [$x]);
+        sql('DELETE FROM paychecks WHERE user_id=?', [$x]);
+        $anchor = (new DateTimeImmutable('tomorrow'))->format('Y-m-d');
+        $settings = ['schedule_type' => $oldType, 'anchor_date' => $anchor, 'default_income' => '1000', 'window_days' => 35];
+        sql('UPDATE user_settings SET schedule_type=?,anchor_date=?,window_days=35 WHERE user_id=?', [$oldType, $anchor, $x]);
+        sql("UPDATE bills SET recurrence_type='every_n_paychecks',recurrence_value=? WHERE user_id=?", [json_encode(['n'=>1,'anchor'=>$anchor]), $x]);
+        App\Services\ScheduleService::generateForUser($x);
+        Occurrence::generateForUser($x);
+        Allocation::autoAllocate($x);
+        $oldChecks = sql('SELECT * FROM paychecks WHERE user_id=? ORDER BY pay_date', [$x])->fetchAll();
+        if ($oldType === 'weekly') {
+            sql('UPDATE paychecks SET amount=1234,amount_overridden=1 WHERE id=?', [$oldChecks[1]['id']]);
+            sql('UPDATE bill_occurrences SET amount=80,skipped=1 WHERE user_id=? AND due_date=?', [$x,$oldChecks[3]['pay_date']]);
+        }
+        $settings['schedule_type'] = $newType;
+        $pdo->beginTransaction();
+        ScheduleTransitionService::reconcile($pdo, $x, $settings, new DateTimeImmutable('today'));
+        $pdo->commit();
+        $desired = array_column(App\Services\ScheduleService::payDates($settings, new DateTimeImmutable('today'), new DateTimeImmutable('+35 days')), 'date');
+        check(sql('SELECT pay_date FROM paychecks WHERE user_id=? AND pay_date >= CURRENT_DATE ORDER BY pay_date', [$x])->fetchAll(PDO::FETCH_COLUMN) === $desired, "$oldType to $newType removes excess allocated/overridden paychecks");
+        check(sql('SELECT due_date FROM bill_occurrences WHERE user_id=? ORDER BY due_date', [$x])->fetchAll(PDO::FETCH_COLUMN) === $desired, "$oldType to $newType removes excess skipped/edited occurrences");
+    }
+    [$x,$xp,$xo] = fixture();
+    sql('UPDATE bill_occurrences SET due_date=? WHERE id=?', [date('Y-m-d', strtotime('+16 days')), $xo]);
+    allocate($x,$xp[0],$xo,'40');
+    allocate($x,$xp[14],$xo,'60');
+    $pdo->beginTransaction();
+    ScheduleTransitionService::reconcile($pdo,$x,['schedule_type'=>'monthly','day_of_month'=>(int)date('j'),'default_income'=>'1000','window_days'=>14],new DateTimeImmutable('today'));
+    $pdo->commit();
+    check(rows($x) === [], 'removing one split paycheck clears all portions');
+    Allocation::autoAllocate($x);
+    check(count(rows($x)) === 1 && conserved($x), 'next load allocates one full amount');
 
     [$u,$p,$o] = fixture();
     allocate($u,$p[-28],$o,'10');

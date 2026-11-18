@@ -171,6 +171,11 @@ the owner, with two deliberate exceptions: the owner's account cannot be
 edited or removed from the Users page, and no administrator can change or
 delete their own account there (change your own password under Settings).
 
+Passwords require at least eight Unicode characters, including a lowercase letter,
+an uppercase letter, a digit and a non-letter/non-number character. Unicode
+letters, arbitrary punctuation, spaces and other whitespace are allowed; Unicode
+letters alone do not count as special characters.
+
 Each user signs in with their own email and password and can change their own
 password under Settings. Reminder emails are per-user: switch them on or off
 for anyone in the household from the Users page.

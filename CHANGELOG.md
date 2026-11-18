@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Schedule changes remove obsolete future unpaid paychecks and bill occurrences.
+  Splits, manual reassignments, skips and edited amounts on removed dates are
+  deliberately discarded and unpaid bills are automatically reallocated in full.
+  Paid-protected dates and past history remain intact.
+- Saving schedule and default income together updates all non-overridden future
+  paychecks, including dates shared by both schedules.
+- Allocation editing includes the current paycheck even in the previous month,
+  and every selected paycheck outside the display window.
+- New and reactivated recurring bills start today rather than generating earlier
+  overdue dates. Existing bills retain their behavior; one-time overdue dates
+  remain supported. Ordinary edits do not reset the start date.
+- A failed budget no longer stops reminders for later budgets; the command
+  reports failed budgets and exits unsuccessfully when any budget fails.
+- Oversized money, bill names, email addresses and mail settings receive
+  validation messages instead of database errors, without partial saves.
+- Passwords accept Unicode letters, arbitrary punctuation and whitespace while
+  retaining the eight-character lowercase/uppercase/digit/special policy.
+- Sign-in renews CSRF tokens; unissued session IDs are replaced. Session cookies
+  now follow the configured base URL path instead of always using the root path,
+  separating non-overlapping subdirectory installations. Root installations still
+  use `/`; cookie paths are not a security boundary between same-origin apps.
+  Users may need to sign in again after this cookie-path change.
+
+Back up the database and `config.php` before upgrading. Schema 8 to 9 requires
+signing in as an administrator and opening `install.php` to run the upgrade.
+The application version remains 0.9-beta; no release is made by these changes.
+
 ## 0.9-beta - 2026-11-15
 
 Application-specific sessions and consistent sign-in accounting. Back up the

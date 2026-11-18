@@ -125,6 +125,24 @@ foreach (['0', '65536', '25junk', '-1'] as $port) {
     $_POST = array_replace($post, ['smtpPort' => $port]);
     check(rejected(fn () => $fields($stored)), 'invalid port rejected');
 }
+foreach (['mailFrom' => 190, 'mailFromName' => 190, 'smtpUsername' => 190, 'smtpHost' => 255] as $field => $limit) {
+    $value = match ($field) {
+        'mailFrom' => str_repeat('a', 64) . '@' . str_repeat('b', 60) . '.' . str_repeat('c', 59) . '.test',
+        'smtpHost' => str_repeat('a', 63) . '.' . str_repeat('b', 63) . '.' . str_repeat('c', 63) . '.' . str_repeat('d', 61) . '.',
+        default => str_repeat('é', $limit),
+    };
+    $_POST = array_replace($post, [$field => $value, 'smtpPassword' => 'synthetic-replacement']);
+    if ($field === 'smtpHost') {
+        check(rejected(fn () => $fields($stored)), '255-character host retains existing DNS syntax validation');
+        $_POST[$field] = str_repeat('a', 63) . '.' . str_repeat('b', 63) . '.' . str_repeat('c', 63) . '.' . str_repeat('d', 61);
+        check(!rejected(fn () => $fields($stored)), 'largest valid DNS hostname accepted');
+        $_POST[$field] = $value;
+    } else {
+        check(mb_strlen($value) === $limit && !rejected(fn () => $fields($stored)), "$field accepts Unicode character limit");
+    }
+    $_POST[$field] .= 'x';
+    check(rejected(fn () => $fields($stored)), "$field rejects limit plus one");
+}
 $_POST = $post;
 $legacy = array_replace($stored, ['smtp_password' => 'synthetic-legacy']);
 check(Secrets::isEncrypted($fields($legacy)['smtp_password']), 'legacy retention encrypts');
@@ -196,5 +214,38 @@ if (!extension_loaded('pdo_mysql') || !getenv('PHP_BUDGET_TEST_DB_HOST') || !get
         }
     }
 }
-echo "Local SMTP verification: SKIPPED (PHPMailer dependencies not installed).\n";
+if (getenv('PHP_BUDGET_TEST_DISPOSABLE') === '1' && is_file(APP_ROOT . '/config.php')) {
+    require_once APP_ROOT . '/src/Installer/Migrator.php';
+    $pdo = testPdo(getenv('PHP_BUDGET_TEST_DB_NAME'));
+    (new \App\Installer\Migrator($pdo))->migrate();
+    $ids = [];
+    try {
+        foreach (['broken', 'later'] as $name) {
+            $pdo->prepare("INSERT INTO users (email,password_hash,role) VALUES (?, 'test', 'admin')")->execute(["reminder-$name@example.test"]);
+            $ids[] = $owner = (int) $pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO user_settings (user_id,mail_transport,schedule_type,day_of_month) VALUES (?, 'log','monthly',1)")->execute([$owner]);
+            $pdo->prepare("INSERT INTO bills (user_id,name,default_amount,recurrence_type,recurrence_value) VALUES (?, ?, 10, 'one_time', ?)")
+                ->execute([$owner, "Reminder $name", json_encode(['date'=>date('Y-m-d')])]);
+        }
+        // A database trigger exercises a real refresh failure without a production test hook.
+        $pdo->exec("CREATE TRIGGER reminder_fault BEFORE INSERT ON paychecks FOR EACH ROW BEGIN IF NEW.user_id = {$ids[0]} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'synthetic refresh failure'; END IF; END");
+        $log = APP_ROOT . '/mail.log';
+        $offset = is_file($log) ? filesize($log) : 0;
+        $proc = proc_open([PHP_BINARY, APP_ROOT . '/bin/send_reminders.php'], [1=>['pipe','w'],2=>['pipe','w']], $pipes);
+        $out = stream_get_contents($pipes[1]);
+        $err = stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]);
+        check(proc_close($proc) === 1 && str_contains($out, '1 budget(s) failed'), 'reminder failure counts budget and exits 1');
+        check(str_contains($err, "owner {$ids[0]} failed:") && str_contains($err, "synthetic refresh failure"), 'reminder reports owner and refresh error');
+        check(str_contains(substr(file_get_contents($log), $offset), 'reminder-later@example.test'), 'later owner reminder delivered through log transport');
+    } finally {
+        $pdo->exec('DROP TRIGGER IF EXISTS reminder_fault');
+        foreach ($ids as $owner) {
+            $pdo->prepare('DELETE FROM users WHERE id=?')->execute([$owner]);
+        }
+    }
+} else {
+    echo "Not verified: reminder isolation integration requires disposable configured database.\n";
+}
+echo "Not verified: actual SMTP relay delivery (log transport tested).\n";
 exit($failures > 0 ? 1 : 0);

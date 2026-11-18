@@ -116,6 +116,12 @@ final class SettingsController
             || !in_array($encryption, ['none', 'tls', 'ssl'], true)) {
             throw new \InvalidArgumentException('Choose a valid mail transport and encryption.');
         }
+        foreach (['mailFrom' => ['From address', 190], 'mailFromName' => ['From name', 190],
+                  'smtpUsername' => ['SMTP username', 190], 'smtpHost' => ['SMTP host', 255]] as $field => [$label, $limit]) {
+            if (mb_strlen(input_string($field)) > $limit) {
+                throw new \InvalidArgumentException("$label must be at most $limit characters.");
+            }
+        }
         $host = input_string('smtpHost');
         if ($host !== '' && !self::validSmtpHost($host)) {
             throw new \InvalidArgumentException('SMTP host must be a hostname or IP address (set the port separately).');
@@ -323,7 +329,8 @@ final class SettingsController
 
             if ($scheduleChanged) {
                 ScheduleTransitionService::reconcile($pdo, $userId, $new, $today);
-            } elseif ($income !== (string) $old['default_income']) {
+            }
+            if ($income !== (string) $old['default_income']) {
                 $pdo->prepare(
                     'UPDATE paychecks SET amount = ? WHERE user_id = ? AND pay_date >= ? AND amount_overridden = 0'
                 )->execute([$income, $userId, $todayStr]);
@@ -342,7 +349,7 @@ final class SettingsController
 
         if ($scheduleChanged) {
             flash('Schedule changed — upcoming schedule dates were updated in place. '
-                . 'Paid bills, allocations, skips, and amount overrides were preserved.', 'warning');
+                . 'Paid and past history were preserved; customizations on removed dates were discarded for automatic reallocation.', 'warning');
         }
 
         flash('Settings saved.');

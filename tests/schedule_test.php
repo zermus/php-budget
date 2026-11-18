@@ -60,6 +60,24 @@ function waves(array $payDates): array
 
 $d = static fn (string $s): DateTimeImmutable => new DateTimeImmutable($s);
 
+foreach (['Abcdefg1#', 'Correct-Horse_Battery 9', "Éabcdef1\n", 'éAbcdef1_'] as $password) {
+    check(password_meets_policy($password), 'Unicode and unrestricted special password accepted');
+}
+foreach (['abcdefg1#', 'Abcdefgh#', 'Abcdef1é', 'Éa1#'] as $password) {
+    check(!password_meets_policy($password), 'missing requirement or short Unicode password rejected');
+}
+check(input_decimal('amount', ['amount' => '99999999.99']) === '99999999.99', 'decimal ceiling accepted');
+check(input_decimal('amount', ['amount' => '100000000.00']) === null, 'decimal ceiling plus cent rejected');
+$boundedBill = ['recurrence_type' => 'monthly_day', 'recurrence_value' => '{"day":5}', 'starts_on' => '2026-11-17'];
+check(OccurrenceService::dueDates($boundedBill, [], $d('2026-11-01'), $d('2026-12-31')) === ['2026-12-05'], 'recurring start boundary excludes earlier monthly dates');
+$boundedBill['starts_on'] = null;
+check(OccurrenceService::dueDates($boundedBill, [], $d('2026-11-01'), $d('2026-12-31')) === ['2026-11-05', '2026-12-05'], 'NULL start preserves legacy behavior');
+$boundedBill = ['recurrence_type' => 'one_time', 'recurrence_value' => '{"date":"2026-10-05"}', 'starts_on' => '2026-11-17'];
+check(OccurrenceService::dueDates($boundedBill, [], $d('2026-11-01'), $d('2026-12-31')) === ['2026-10-05'], 'one time remains intentionally overdue');
+
+$boundedBill = ['recurrence_type'=>'every_n_paychecks','recurrence_value'=>'{"n":2,"anchor":"2026-11-01"}','starts_on'=>'2026-11-17'];
+check(OccurrenceService::dueDates($boundedBill, ['schedule_type'=>'weekly','anchor_date'=>'2026-11-01'], $d('2026-11-01'), $d('2026-12-01')) === ['2026-11-29'], 'paycheck recurrence boundary preserves original phase');
+
 // --- Biweekly (the seeded schedule) -------------------------------------
 
 echo "Biweekly, anchor 2026-07-22:\n";
@@ -282,6 +300,26 @@ function runDatabaseChecks(array $config): void
     $databases = [];
 
     try {
+        foreach (range(1, 8) as $version) {
+            $upgradeDb = databaseName('v' . $version);
+            $databases[] = $upgradeDb;
+            $server->exec("CREATE DATABASE `$upgradeDb` CHARACTER SET utf8mb4");
+            $upgradePdo = databasePdo($config, $upgradeDb);
+            $upgradeMigrator = new Migrator($upgradePdo);
+            foreach (glob(APP_ROOT . '/migrations/*.php') as $file) {
+                $migration = require $file;
+                if ($migration['version'] <= $version) {
+                    ($migration['up'])($upgradePdo, $upgradeMigrator);
+                    $upgradeMigrator->setVersion($migration['version']);
+                }
+            }
+            $upgradeMigrator->migrate();
+            foreach (glob(APP_ROOT . '/migrations/00[2-9]*.php') as $file) {
+                $migration = require $file;
+                ($migration['up'])($upgradePdo, $upgradeMigrator);
+            }
+            check($upgradeMigrator->currentVersion() === 9 && $upgradeMigrator->columnExists('bills','starts_on'), "schema $version upgrades to 9 and guarded migrations rerun");
+        }
         $database = databaseName('main');
         $databases[] = $database;
         $server->exec("CREATE DATABASE `{$database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -289,6 +327,9 @@ function runDatabaseChecks(array $config): void
         $migrator = new Migrator($pdo);
         $installer = new Installer();
 
+        $longEmail = str_repeat('a',64) . '@' . str_repeat('b',60) . '.' . str_repeat('c',59) . '.test';
+        check(str_contains((string)$installer->createUser($pdo, $longEmail.'x', 'Abcdefg1#', 'Abcdefg1#'), '190 characters')
+            && !$migrator->tableExists('users'), 'installer rejects oversized email before owner write');
         $userId = null;
         $error = $installer->installFirstOwner(
             $pdo,
