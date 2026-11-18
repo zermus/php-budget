@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.10-beta.
+A simple self-hosted paycheck budgeting app. Version 0.11-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -61,6 +61,18 @@ php-budget/
 5. Remove `setup_token` from `config.php`, add the reminder cron entry (shown
    by the installer, see below), then delete `public/install.php` if you like —
    it refuses to reinstall either way.
+
+## Upgrading from 0.10-beta
+
+Back up the database and `config.php`, including the existing `app_key`, before
+upgrading. Extract `php-budget-0.11-beta.tar.gz` over the installation while
+preserving `config.php` and its existing key; do not replace your configuration
+with the sample. The archive excludes `config.php`.
+
+There are no special upgrade steps: schema version remains 9, with no migrations,
+new configuration keys or new requirements. This release introduces no forced
+sign-in or session/token invalidation. For older installations, follow the
+applicable earlier upgrade instructions below.
 
 ## Upgrading from 0.9-beta
 
