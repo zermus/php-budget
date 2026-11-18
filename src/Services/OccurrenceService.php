@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Database;
 use DateTimeImmutable;
+use PDO;
 
 final class OccurrenceService
 {
@@ -17,6 +17,12 @@ final class OccurrenceService
      */
     public static function generateForUser(int $userId): void
     {
+        BudgetLock::run($userId, static fn (PDO $pdo) => self::generateForUserLocked($pdo, $userId));
+    }
+
+    /** Internal composition only: caller must already hold BudgetLock for this user. */
+    public static function generateForUserLocked(PDO $pdo, int $userId): void
+    {
         $settings = ScheduleService::userSettings($userId);
         if ($settings === null) {
             return;
@@ -26,12 +32,12 @@ final class OccurrenceService
         $from = $today->modify('first day of this month');
         $to = $today->modify('+' . ScheduleService::windowDays($settings) . ' days');
 
-        $bills = Database::pdo()->prepare(
+        $bills = $pdo->prepare(
             'SELECT * FROM bills WHERE user_id = ? AND active = 1'
         );
         $bills->execute([$userId]);
 
-        $insert = Database::pdo()->prepare(
+        $insert = $pdo->prepare(
             'INSERT IGNORE INTO bill_occurrences (user_id, bill_id, due_date, amount)
              VALUES (?, ?, ?, ?)'
         );
@@ -167,35 +173,59 @@ final class OccurrenceService
             return false;
         }
 
-        $stmt = Database::pdo()->prepare(
-            'UPDATE bill_occurrences
-             SET paid = 1, paid_at = NOW(), paid_source = ?
-             WHERE id = ? AND user_id = ?'
-        );
-        $stmt->execute([$source, $occurrenceId, $userId]);
-
-        return $stmt->rowCount() > 0 || self::belongsToUser($occurrenceId, $userId);
+        return BudgetLock::run($userId, static fn (PDO $pdo): bool =>
+            self::setPaidLocked($pdo, $occurrenceId, $userId, true, $source));
     }
 
     public static function markUnpaid(int $occurrenceId, int $userId): bool
     {
-        $stmt = Database::pdo()->prepare(
-            'UPDATE bill_occurrences
-             SET paid = 0, paid_at = NULL, paid_source = NULL
-             WHERE id = ? AND user_id = ?'
-        );
-        $stmt->execute([$occurrenceId, $userId]);
-
-        return $stmt->rowCount() > 0 || self::belongsToUser($occurrenceId, $userId);
+        return BudgetLock::run($userId, static fn (PDO $pdo): bool =>
+            self::setPaidLocked($pdo, $occurrenceId, $userId, false));
     }
 
-    private static function belongsToUser(int $occurrenceId, int $userId): bool
+    /** Internal composition only: caller must already hold BudgetLock for this user. */
+    public static function setPaidLocked(PDO $pdo, int $occurrenceId, int $userId, bool $paid, string $source = 'manual'): bool
     {
-        $stmt = Database::pdo()->prepare(
-            'SELECT COUNT(*) FROM bill_occurrences WHERE id = ? AND user_id = ?'
-        );
-        $stmt->execute([$occurrenceId, $userId]);
+        if (!in_array($source, ['manual', 'sync'], true) || self::ownedLocked($pdo, $occurrenceId, $userId) === null) {
+            return false;
+        }
+        $stmt = $pdo->prepare($paid
+            ? 'UPDATE bill_occurrences SET paid = 1, paid_at = NOW(), paid_source = ? WHERE id = ?'
+            : 'UPDATE bill_occurrences SET paid = 0, paid_at = NULL, paid_source = NULL WHERE id = ?');
+        $stmt->execute($paid ? [$source, $occurrenceId] : [$occurrenceId]);
+        return true;
+    }
 
-        return (int) $stmt->fetchColumn() > 0;
+    public static function skip(int $occurrenceId, int $userId): bool
+    {
+        return BudgetLock::run($userId, static function (PDO $pdo) use ($occurrenceId, $userId): bool {
+            $occ = self::ownedLocked($pdo, $occurrenceId, $userId);
+            if ($occ === null || $occ['paid'] || $occ['skipped']) {
+                return false;
+            }
+            $pdo->prepare('UPDATE bill_occurrences SET skipped = 1 WHERE id = ?')->execute([$occurrenceId]);
+            $pdo->prepare('DELETE FROM allocations WHERE occurrence_id = ? AND user_id = ?')
+                ->execute([$occurrenceId, $userId]);
+            return true;
+        });
+    }
+
+    public static function updateAmount(int $occurrenceId, int $userId, string $amount): bool
+    {
+        return BudgetLock::run($userId, static function (PDO $pdo) use ($occurrenceId, $userId, $amount): bool {
+            if (self::ownedLocked($pdo, $occurrenceId, $userId) === null) {
+                return false;
+            }
+            $pdo->prepare('UPDATE bill_occurrences SET amount = ? WHERE id = ?')->execute([$amount, $occurrenceId]);
+            AllocationService::syncSingleAllocationLocked($pdo, $occurrenceId, $userId);
+            return true;
+        });
+    }
+
+    private static function ownedLocked(PDO $pdo, int $occurrenceId, int $userId): ?array
+    {
+        $stmt = $pdo->prepare('SELECT * FROM bill_occurrences WHERE id = ? AND user_id = ? FOR UPDATE');
+        $stmt->execute([$occurrenceId, $userId]);
+        return $stmt->fetch() ?: null;
     }
 }

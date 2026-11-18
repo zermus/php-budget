@@ -66,19 +66,9 @@ final class OccurrenceController
             ], 422);
         }
 
-        $pdo = Database::pdo();
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM bill_occurrences WHERE id = ? AND user_id = ?');
-        $stmt->execute([$occurrenceId, $userId]);
-        if ((int) $stmt->fetchColumn() === 0) {
+        if (!OccurrenceService::updateAmount($occurrenceId, $userId, $amount)) {
             json_response(['success' => false, 'error' => 'Bill occurrence not found.'], 404);
         }
-
-        $stmt = $pdo->prepare(
-            'UPDATE bill_occurrences SET amount = ? WHERE id = ? AND user_id = ?'
-        );
-        $stmt->execute([$amount, $occurrenceId, $userId]);
-
-        AllocationService::syncSingleAllocation($occurrenceId, $userId, $amount);
 
         json_response([
             'success' => true,
@@ -118,14 +108,7 @@ final class OccurrenceController
         $occurrenceId = input_int('id');
         $userId = Auth::dataUserId();
 
-        $stmt = Database::pdo()->prepare(
-            'UPDATE bill_occurrences SET skipped = 1 WHERE id = ? AND user_id = ? AND paid = 0'
-        );
-        $stmt->execute([$occurrenceId, $userId]);
-
-        if ($stmt->rowCount() > 0) {
-            Database::pdo()->prepare('DELETE FROM allocations WHERE occurrence_id = ? AND user_id = ?')
-                ->execute([$occurrenceId, $userId]);
+        if (OccurrenceService::skip($occurrenceId, $userId)) {
             flash('Bill occurrence skipped.');
         } else {
             flash('Only unpaid occurrences can be skipped.', 'error');

@@ -19,6 +19,7 @@ use App\Installer\Migrator;
 use App\Services\AllocationService as Allocation;
 use App\Services\OccurrenceService as Occurrence;
 use App\Services\ScheduleTransitionService;
+use App\Services\BudgetLock;
 use App\View;
 
 $failures = 0;
@@ -241,6 +242,82 @@ try {
     Allocation::syncSingleAllocation($xo, $x, '110');
     check(conserved($x, '125.00'), 'delayed amount synchronization uses locked current value, not stale request');
 
+
+    [$retryUser, $retryChecks, $retryOcc] = fixture();
+    allocate($retryUser, $retryChecks[0], $retryOcc, '100');
+    foreach ([1213, 1205, 1644] as $driverError) {
+        $attempts = 0;
+        $before = sql('SELECT MIN(amount) FROM paychecks WHERE user_id=?', [$retryUser])->fetchColumn();
+        try {
+            BudgetLock::run($retryUser, static function (PDO $db) use ($retryUser, $driverError, &$attempts): void {
+                $attempts++;
+                $db->prepare('UPDATE paychecks SET amount=amount+1 WHERE user_id=?')->execute([$retryUser]);
+                if ($attempts === 1 || $driverError === 1644) {
+                    $db->exec("SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=$driverError, MESSAGE_TEXT='retry test'");
+                }
+            });
+            check($driverError !== 1644 && $attempts === 2
+                && (float) sql('SELECT MIN(amount) FROM paychecks WHERE user_id=?', [$retryUser])->fetchColumn() === (float) $before + 1
+                && !$pdo->inTransaction(), "$driverError retries entire transaction and commits increment once");
+        } catch (PDOException $e) {
+            check($driverError === 1644 && $attempts === 1 && !$pdo->inTransaction()
+                && sql('SELECT MIN(amount) FROM paychecks WHERE user_id=?', [$retryUser])->fetchColumn() === $before, 'nonretryable error rolls back without retry');
+        }
+    }
+    foreach ([1213, 1205] as $driverError) {
+        $attempts = 0;
+        try {
+            BudgetLock::run($retryUser, static function (PDO $db) use ($driverError, &$attempts): void {
+                $attempts++;
+                $db->exec("SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=$driverError, MESSAGE_TEXT='exhaustion test'");
+            });
+            check(false, 'exhaustion must throw');
+        } catch (PDOException $e) {
+            check($attempts === 3 && (int) $e->errorInfo[1] === $driverError && !$pdo->inTransaction(), "$driverError exhausts exactly three attempts");
+        }
+    }
+    $pdo->beginTransaction();
+    try {
+        BudgetLock::run($retryUser, static fn () => null);
+        check(false, 'nested owner must throw');
+    } catch (LogicException $e) {
+        check($pdo->inTransaction(), 'nested runner rejects without altering caller transaction');
+    } finally {
+        $pdo->rollBack();
+    }
+    check(Occurrence::markPaid($retryOcc, $retryUser, 'sync') && Occurrence::markPaid($retryOcc, $retryUser, 'sync')
+        && sql('SELECT paid_source FROM bill_occurrences WHERE id=?', [$retryOcc])->fetchColumn() === 'sync'
+        && Occurrence::markUnpaid($retryOcc, $retryUser) && Occurrence::markUnpaid($retryOcc, $retryUser), 'repeated payment/unpayment succeeds with source semantics');
+    check(!Occurrence::markPaid($retryOcc, $other) && !Occurrence::markUnpaid($retryOcc, $other)
+        && !Occurrence::skip($retryOcc, $other) && !Occurrence::updateAmount($retryOcc, $other, '999')
+        && conserved($retryUser), 'all occurrence mutations reject foreign ownership');
+    check(!Occurrence::markPaid($retryOcc, $retryUser, 'invalid'), 'invalid payment source rejected');
+    check(Allocation::saveSplit($retryOcc, [$retryChecks[0] => '40', $retryChecks[14] => '60'], $retryUser) === null,
+        'explicit split fixture saves');
+    Occurrence::updateAmount($retryOcc, $retryUser, '125');
+    check(conserved($retryUser, '100.00')
+        && sql('SELECT amount FROM bill_occurrences WHERE id=?', [$retryOcc])->fetchColumn() === '125.00',
+        'amount edit preserves explicit split amounts for manual rebalance');
+    Occurrence::updateAmount($retryOcc, $retryUser, '100');
+    Allocation::saveSplit($retryOcc, [$retryChecks[0] => '100'], $retryUser);
+    foreach (['skip', 'amount'] as $operation) {
+        $before = rows($retryUser);
+        $pdo->exec("CREATE TRIGGER pair_fault BEFORE " . ($operation === 'skip' ? 'DELETE' : 'UPDATE') . " ON allocations FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='paired write fault'");
+        try {
+            if ($operation === 'skip') {
+                Occurrence::skip($retryOcc, $retryUser);
+            } else {
+                Occurrence::updateAmount($retryOcc, $retryUser, '150');
+            }
+            check(false, 'paired write must throw');
+        } catch (PDOException $e) {
+            $occ = sql('SELECT amount,skipped FROM bill_occurrences WHERE id=?', [$retryOcc])->fetch();
+            check(!$pdo->inTransaction() && rows($retryUser) === $before && $occ['amount'] === '100.00' && !$occ['skipped'], "$operation rolls back both paired writes");
+        } finally {
+            $pdo->exec('DROP TRIGGER pair_fault');
+        }
+    }
+
     if (!function_exists('pcntl_fork')) {
         echo "Not verified: concurrent mutation checks require pcntl.\n";
         $failures++;
@@ -268,19 +345,19 @@ try {
         $pdo = connect();
         inject($pdo);
         $pdo->beginTransaction();
-        sql('SELECT id FROM bill_occurrences WHERE id=? FOR UPDATE', [$lockedOcc]);
+        BudgetLock::lock($pdo, $lockedUser);
         fwrite($sockets[0], 'G');
         fread($sockets[0], 1);
         usleep(100000);
-        Occurrence::markPaid($lockedOcc, $lockedUser);
+        Occurrence::setPaidLocked($pdo, $lockedOcc, $lockedUser, true);
         $pdo->commit();
         pcntl_waitpid($pid, $status);
         fclose($sockets[0]);
         check(pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0
             && rows($lockedUser)[0]['paycheck_id'] === $lockedChecks[-28]
-            && conserved($lockedUser), 'waiting allocation rechecks committed payment under occurrence lock');
+            && conserved($lockedUser), 'waiting allocation rechecks committed payment under budget lock');
 
-        foreach (['loads','payment','split','amount','amount_single','skip','schedule'] as $mode) {
+        foreach (['loads','payment','split','amount_single','skip','schedule'] as $mode) {
             [$x,$xp,$xo] = fixture();
             if ($mode === 'amount_single') {
                 allocate($x,$xp[-28],$xo,'100');
@@ -313,26 +390,24 @@ try {
                                 exit(1);
                             }
                         } elseif (in_array($mode, ['amount', 'amount_single'], true)) {
-                            sql('UPDATE bill_occurrences SET amount=120 WHERE id=? AND user_id=?',[$xo,$x]);
-                            Allocation::syncSingleAllocation($xo,$x,'120');
+                            Occurrence::updateAmount($xo, $x, '120');
                         } elseif ($mode === 'skip') {
-                            sql('UPDATE bill_occurrences SET skipped=1 WHERE id=? AND user_id=? AND paid=0',[$xo,$x]);
-                            sql('DELETE FROM allocations WHERE occurrence_id=? AND user_id=?',[$xo,$x]);
+                            Occurrence::skip($xo, $x);
                         } else {
-                            $db = Database::pdo();
-                            $db->beginTransaction();
-                            ScheduleTransitionService::reconcile($db,$x,[
-                                'schedule_type'=>'weekly','anchor_date'=>date('Y-m-d'),
-                                'default_income'=>'1000','window_days'=>28
-                            ],new DateTimeImmutable('today'));
-                            $db->commit();
+                            BudgetLock::run($x, static function (PDO $db) use ($x): void {
+                                ScheduleTransitionService::reconcile($db,$x,[
+                                    'schedule_type'=>'weekly','anchor_date'=>date('Y-m-d'),
+                                    'default_income'=>'1000','window_days'=>28
+                                ],new DateTimeImmutable('today'));
+                            });
                         }
                         exit(0);
                     } catch (PDOException $e) {
                         if (Database::pdo()->inTransaction()) {
                             Database::pdo()->rollBack();
                         }
-                        exit(in_array((int)($e->errorInfo[1] ?? 0),[1205,1213],true) ? 2 : 1);
+                        fwrite(STDERR, "Child database failure: " . $e->getCode() . "\n");
+                        exit(1);
                     }
                 }
                 $children[]=$pid;
@@ -340,7 +415,7 @@ try {
             $safe = true;
             foreach ($children as $pid) {
                 pcntl_waitpid($pid,$status);
-                $safe = $safe && pcntl_wifexited($status) && in_array(pcntl_wexitstatus($status),[0,2],true);
+                $safe = $safe && pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0;
             }
             $pdo=connect();
             inject($pdo);
@@ -351,6 +426,75 @@ try {
             Allocation::autoAllocate($x);
             check($skipped ? rows($x) === [] : conserved($x, $expected), "concurrent $mode: subsequent load preserves totals");
         }
+
+        [$stressUser, $stressChecks, $stressOcc] = fixture();
+        $billId = (int) sql('SELECT bill_id FROM bill_occurrences WHERE id=?', [$stressOcc])->fetchColumn();
+        $occurrences = [$stressOcc];
+        for ($i = 1; $i < 10; $i++) {
+            sql('INSERT INTO bill_occurrences (user_id,bill_id,due_date,amount) VALUES (?,?,?,100)',
+                [$stressUser, $billId, date('Y-m-d', strtotime("+$i days"))]);
+            $occurrences[] = (int) $pdo->lastInsertId();
+        }
+        Allocation::autoAllocate($stressUser);
+        $pdo = null;
+        inject(null);
+        $children = [];
+        $start = microtime(true) + 0.2;
+        for ($i = 0; $i < 8; $i++) {
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                throw new RuntimeException('stress fork failed');
+            }
+            if ($pid === 0) {
+                inject(connect());
+                usleep(max(0, (int) (($start - microtime(true)) * 1000000)));
+                $iteration = $i;
+                try {
+                    while (microtime(true) < $start + 5) {
+                        $occ = $occurrences[random_int(0, 9)];
+                        switch ($iteration++ % 6) {
+                            case 0: Occurrence::markPaid($occ, $stressUser); break;
+                            case 1: Occurrence::markUnpaid($occ, $stressUser); break;
+                            case 2: Occurrence::skip($occ, $stressUser); break;
+                            case 3: Occurrence::updateAmount($occ, $stressUser, (string) random_int(80, 120)); break;
+                            case 4: Allocation::autoAllocate($stressUser); break;
+                            case 5:
+                                BudgetLock::run($stressUser, static function (PDO $db) use ($stressUser): void {
+                                    $settings = App\Services\ScheduleService::userSettings($stressUser);
+                                    $settings['schedule_type'] = 'biweekly';
+                                    $settings['anchor_date'] = date('Y-m-d');
+                                    $settings['window_days'] = 14;
+                                    $db->prepare("UPDATE user_settings SET schedule_type='biweekly',anchor_date=?,window_days=14 WHERE user_id=?")
+                                        ->execute([$settings['anchor_date'], $stressUser]);
+                                    ScheduleTransitionService::reconcile($db, $stressUser, $settings, new DateTimeImmutable('today'));
+                                    App\Services\ScheduleService::generateForUserLocked($db, $stressUser);
+                                    Occurrence::generateForUserLocked($db, $stressUser);
+                                });
+                                break;
+                        }
+                    }
+                    exit(0);
+                } catch (Throwable $e) {
+                    fwrite(STDERR, 'Stress child failed: ' . $e->getMessage() . "\n");
+                    exit(1);
+                }
+            }
+            $children[] = $pid;
+        }
+        $safe = true;
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            $safe = $safe && pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0;
+        }
+        $pdo = connect();
+        inject($pdo);
+        Allocation::autoAllocate($stressUser);
+        $violations = sql('SELECT o.id FROM bill_occurrences o LEFT JOIN allocations a ON a.occurrence_id=o.id
+            WHERE o.user_id=? GROUP BY o.id,o.amount,o.skipped
+            HAVING (o.skipped=1 AND COUNT(a.id)>0) OR (o.skipped=0 AND COALESCE(SUM(a.amount),0)<>o.amount)', [$stressUser])->fetchAll();
+        $duplicates = sql('SELECT paycheck_id,occurrence_id FROM allocations WHERE user_id=?
+            GROUP BY paycheck_id,occurrence_id HAVING COUNT(*)>1', [$stressUser])->fetchAll();
+        check($safe && $violations === [] && $duplicates === [], 'eight processes / five seconds: real mutations and schedule saves conserve totals, skip cleanup and unique pairs');
     }
 } finally {
     inject(null);

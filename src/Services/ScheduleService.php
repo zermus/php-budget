@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Database;
 use DateTimeImmutable;
+use PDO;
 
 final class ScheduleService
 {
@@ -95,6 +96,12 @@ final class ScheduleService
      */
     public static function generateForUser(int $userId): void
     {
+        BudgetLock::run($userId, static fn (PDO $pdo) => self::generateForUserLocked($pdo, $userId));
+    }
+
+    /** Internal composition only: caller must already hold BudgetLock for this user. */
+    public static function generateForUserLocked(PDO $pdo, int $userId): void
+    {
         $settings = self::userSettings($userId);
         if ($settings === null) {
             return;
@@ -109,7 +116,7 @@ final class ScheduleService
             return;
         }
 
-        $stmt = Database::pdo()->prepare(
+        $stmt = $pdo->prepare(
             'INSERT INTO paychecks (user_id, pay_date, amount, is_wave)
              VALUES (?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE is_wave = VALUES(is_wave)'

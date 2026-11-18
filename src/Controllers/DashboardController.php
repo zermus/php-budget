@@ -8,6 +8,7 @@ use App\Auth;
 use App\Csrf;
 use App\Database;
 use App\Services\AllocationService;
+use App\Services\BudgetLock;
 use App\Services\OccurrenceService;
 use App\Services\ScheduleService;
 use App\View;
@@ -155,10 +156,14 @@ final class DashboardController
             json_response(['success' => false, 'error' => 'Enter a valid dollar amount.'], 422);
         }
 
-        $stmt = Database::pdo()->prepare(
-            'UPDATE paychecks SET amount = ?, amount_overridden = 1 WHERE id = ? AND user_id = ?'
-        );
-        $stmt->execute([$amount, $paycheckId, $userId]);
+        BudgetLock::run($userId, static function (\PDO $pdo) use ($userId, $paycheckId, $amount): void {
+            $stmt = $pdo->prepare('SELECT id FROM paychecks WHERE id = ? AND user_id = ? FOR UPDATE');
+            $stmt->execute([$paycheckId, $userId]);
+            if ($stmt->fetchColumn() !== false) {
+                $pdo->prepare('UPDATE paychecks SET amount = ?, amount_overridden = 1 WHERE id = ?')
+                    ->execute([$amount, $paycheckId]);
+            }
+        });
 
         $totals = AllocationService::paycheckTotals($userId, [$paycheckId]);
         if ($totals === []) {

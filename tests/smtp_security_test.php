@@ -18,6 +18,7 @@ use App\Controllers\SettingsController;
 require APP_ROOT . '/src/Database.php';
 require APP_ROOT . '/src/Auth.php';
 require APP_ROOT . '/src/Services/ScheduleService.php';
+require APP_ROOT . '/src/Services/BudgetLock.php';
 
 function testPdo(?string $database = null): PDO
 {
@@ -184,6 +185,11 @@ if (!extension_loaded('pdo_mysql') || !getenv('PHP_BUDGET_TEST_DB_HOST') || !get
         $server = testPdo();
         $server->exec("CREATE DATABASE `$database`");
         $pdo = testPdo($database);
+        $pdo->exec('CREATE TABLE users (id INT PRIMARY KEY) ENGINE=InnoDB');
+        $pdo->exec('INSERT INTO users VALUES (1), (2)');
+        foreach (['paychecks', 'bill_occurrences'] as $table) {
+            $pdo->exec("CREATE TABLE $table (id INT PRIMARY KEY, user_id INT) ENGINE=InnoDB");
+        }
         $pdo->exec('CREATE TABLE user_settings (user_id INT PRIMARY KEY, smtp_host VARCHAR(255), smtp_port INT,
             smtp_encryption VARCHAR(16), smtp_username VARCHAR(255), smtp_password TEXT) ENGINE=InnoDB');
         $pdo->exec("INSERT INTO user_settings VALUES (1, 'account.example', 587, 'tls', 'synthetic-user', 'synthetic-legacy')");

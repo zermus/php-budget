@@ -18,11 +18,7 @@ final class AllocationService
      */
     public static function autoAllocate(int $userId): void
     {
-        $pdo = Database::pdo();
-
-        $pdo->beginTransaction();
-        try {
-            self::lockBudget($pdo, $userId);
+        BudgetLock::run($userId, static function (PDO $pdo) use ($userId): void {
             $settings = ScheduleService::userSettings($userId) ?? [];
             $to = (new DateTimeImmutable('today'))
                 ->modify('+' . ScheduleService::windowDays($settings) . ' days')
@@ -64,26 +60,7 @@ final class AllocationService
                 $insert->execute([$userId, (int) $paycheckId, (int) $occ['id'], (string) $occ['amount']]);
             }
             self::carryForward($pdo, $userId);
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
-    }
-
-    private static function lockBudget(PDO $pdo, int $userId): void
-    {
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE id = ? FOR UPDATE');
-        $stmt->execute([$userId]);
-        // Match schedule reconciliation's paycheck-before-occurrence order;
-        // occurrence locks also serialize payment and skip writers.
-        foreach (['paychecks', 'bill_occurrences'] as $table) {
-            $stmt = $pdo->prepare("SELECT id FROM {$table} WHERE user_id = ? ORDER BY id FOR UPDATE");
-            $stmt->execute([$userId]);
-            $stmt->fetchAll();
-        }
+        });
     }
 
     private static function carryForward(PDO $pdo, int $userId): void
@@ -132,20 +109,8 @@ final class AllocationService
      */
     public static function saveSplit(int $occurrenceId, array $rows, int $userId): ?string
     {
-        $pdo = Database::pdo();
-
-        $pdo->beginTransaction();
-        try {
-            self::lockBudget($pdo, $userId);
-            $error = self::replaceSplit($pdo, $occurrenceId, $rows, $userId);
-            $pdo->commit();
-            return $error;
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
-        }
+        return BudgetLock::run($userId, static fn (PDO $pdo): ?string =>
+            self::replaceSplit($pdo, $occurrenceId, $rows, $userId));
     }
 
     /** @param array<int, string> $rows */
@@ -205,24 +170,19 @@ final class AllocationService
      */
     public static function syncSingleAllocation(int $occurrenceId, int $userId, string $amount): void
     {
-        $pdo = Database::pdo();
-        $pdo->beginTransaction();
-        try {
-            self::lockBudget($pdo, $userId);
-            $occ = self::userOccurrence($pdo, $occurrenceId, $userId);
-            $count = $pdo->prepare('SELECT id FROM allocations WHERE occurrence_id = ? AND user_id = ? FOR UPDATE');
-            $count->execute([$occurrenceId, $userId]);
-            if ($occ !== null && count($count->fetchAll()) === 1) {
-                // A later edit may have committed before this request synced.
-                $pdo->prepare('UPDATE allocations SET amount = ? WHERE occurrence_id = ? AND user_id = ?')
-                    ->execute([$occ['amount'], $occurrenceId, $userId]);
-            }
-            $pdo->commit();
-        } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            throw $e;
+        BudgetLock::run($userId, static fn (PDO $pdo) =>
+            self::syncSingleAllocationLocked($pdo, $occurrenceId, $userId));
+    }
+
+    /** Internal composition only: caller must already hold BudgetLock for this user. */
+    public static function syncSingleAllocationLocked(PDO $pdo, int $occurrenceId, int $userId): void
+    {
+        $occ = self::userOccurrence($pdo, $occurrenceId, $userId);
+        $count = $pdo->prepare('SELECT id FROM allocations WHERE occurrence_id = ? AND user_id = ? FOR UPDATE');
+        $count->execute([$occurrenceId, $userId]);
+        if ($occ !== null && count($count->fetchAll()) === 1) {
+            $pdo->prepare('UPDATE allocations SET amount = ? WHERE occurrence_id = ? AND user_id = ?')
+                ->execute([$occ['amount'], $occurrenceId, $userId]);
         }
     }
 

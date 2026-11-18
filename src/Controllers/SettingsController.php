@@ -9,6 +9,7 @@ use App\Csrf;
 use App\Database;
 use App\Mailer;
 use App\Secrets;
+use App\Services\BudgetLock;
 use App\Services\ScheduleService;
 use App\Services\ScheduleTransitionService;
 use App\View;
@@ -272,75 +273,74 @@ final class SettingsController
             $this->fail('The dashboard window must be between 14 and 365 days.');
         }
 
-        $pdo = Database::pdo();
         $today = new DateTimeImmutable('today');
         $todayStr = $today->format('Y-m-d');
 
-        $pdo->beginTransaction();
         try {
-            $pdo->prepare('INSERT IGNORE INTO user_settings (user_id) VALUES (?)')->execute([$userId]);
-            $lock = $pdo->prepare('SELECT * FROM user_settings WHERE user_id = ? FOR UPDATE');
-            $lock->execute([$userId]);
-            $old = $lock->fetch();
-            $mail = $this->mailFields($old);
-            $new = array_merge($old, [
-                'schedule_type' => $type,
-                'anchor_date' => $anchorDate !== '' ? $anchorDate : null,
-                'days_of_month' => $daysOfMonth,
-                'day_of_month' => $dayOfMonth,
-                'default_income' => $income,
-                'window_days' => $windowDays,
-            ]);
-            $scheduleChanged = $type !== (string) $old['schedule_type']
-                || ($anchorDate ?? '') !== (string) ($old['anchor_date'] ?? '')
-                || ($daysOfMonth ?? '') !== (string) ($old['days_of_month'] ?? '')
-                || ($dayOfMonth ?? 0) !== (int) ($old['day_of_month'] ?? 0);
-            if ($scheduleChanged) {
-                $new['schedule_effective_date'] = $todayStr;
-            }
+            $scheduleChanged = BudgetLock::run($userId, function (\PDO $pdo) use (
+                $userId, $type, $anchorDate, $daysOfMonth, $dayOfMonth, $income, $leadDays, $windowDays, $today, $todayStr
+            ): bool {
+                $pdo->prepare('INSERT IGNORE INTO user_settings (user_id) VALUES (?)')->execute([$userId]);
+                $lock = $pdo->prepare('SELECT * FROM user_settings WHERE user_id = ? FOR UPDATE');
+                $lock->execute([$userId]);
+                $old = $lock->fetch();
+                $mail = $this->mailFields($old);
+                $new = array_merge($old, [
+                    'schedule_type' => $type,
+                    'anchor_date' => $anchorDate !== '' ? $anchorDate : null,
+                    'days_of_month' => $daysOfMonth,
+                    'day_of_month' => $dayOfMonth,
+                    'default_income' => $income,
+                    'window_days' => $windowDays,
+                ]);
+                $scheduleChanged = $type !== (string) $old['schedule_type']
+                    || ($anchorDate ?? '') !== (string) ($old['anchor_date'] ?? '')
+                    || ($daysOfMonth ?? '') !== (string) ($old['days_of_month'] ?? '')
+                    || ($dayOfMonth ?? 0) !== (int) ($old['day_of_month'] ?? 0);
+                if ($scheduleChanged) {
+                    $new['schedule_effective_date'] = $todayStr;
+                }
 
-            $pdo->prepare(
-                'UPDATE user_settings
-                 SET schedule_type = ?, anchor_date = ?, days_of_month = ?, day_of_month = ?,
-                     schedule_effective_date = ?, default_income = ?, reminder_lead_days = ?, window_days = ?,
-                     mail_transport = ?, mail_from = ?, mail_from_name = ?,
-                     smtp_host = ?, smtp_port = ?, smtp_username = ?, smtp_password = ?,
-                     smtp_encryption = ?
-                 WHERE user_id = ?'
-            )->execute([
-                $type,
-                $anchorDate !== '' ? $anchorDate : null,
-                $daysOfMonth,
-                $dayOfMonth,
-                $new['schedule_effective_date'] ?? null,
-                $income,
-                $leadDays,
-                $windowDays,
-                $mail['mail_transport'],
-                $mail['mail_from'],
-                $mail['mail_from_name'],
-                $mail['smtp_host'],
-                $mail['smtp_port'],
-                $mail['smtp_username'],
-                $mail['smtp_password'],
-                $mail['smtp_encryption'],
-                $userId,
-            ]);
-
-            if ($scheduleChanged) {
-                ScheduleTransitionService::reconcile($pdo, $userId, $new, $today);
-            }
-            if ($income !== (string) $old['default_income']) {
                 $pdo->prepare(
-                    'UPDATE paychecks SET amount = ? WHERE user_id = ? AND pay_date >= ? AND amount_overridden = 0'
-                )->execute([$income, $userId, $todayStr]);
-            }
+                    'UPDATE user_settings
+                     SET schedule_type = ?, anchor_date = ?, days_of_month = ?, day_of_month = ?,
+                         schedule_effective_date = ?, default_income = ?, reminder_lead_days = ?, window_days = ?,
+                         mail_transport = ?, mail_from = ?, mail_from_name = ?,
+                         smtp_host = ?, smtp_port = ?, smtp_username = ?, smtp_password = ?,
+                         smtp_encryption = ?
+                     WHERE user_id = ?'
+                )->execute([
+                    $type,
+                    $anchorDate !== '' ? $anchorDate : null,
+                    $daysOfMonth,
+                    $dayOfMonth,
+                    $new['schedule_effective_date'] ?? null,
+                    $income,
+                    $leadDays,
+                    $windowDays,
+                    $mail['mail_transport'],
+                    $mail['mail_from'],
+                    $mail['mail_from_name'],
+                    $mail['smtp_host'],
+                    $mail['smtp_port'],
+                    $mail['smtp_username'],
+                    $mail['smtp_password'],
+                    $mail['smtp_encryption'],
+                    $userId,
+                ]);
 
-            $pdo->commit();
+                if ($scheduleChanged) {
+                    ScheduleTransitionService::reconcile($pdo, $userId, $new, $today);
+                }
+                if ($income !== (string) $old['default_income']) {
+                    $pdo->prepare(
+                        'UPDATE paychecks SET amount = ? WHERE user_id = ? AND pay_date >= ? AND amount_overridden = 0'
+                    )->execute([$income, $userId, $todayStr]);
+                }
+
+                return $scheduleChanged;
+            });
         } catch (\Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
             if ($e instanceof \InvalidArgumentException) {
                 $this->fail($e->getMessage());
             }
