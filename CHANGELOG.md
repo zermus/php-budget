@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10-beta - 2026-11-18
 
 - Schedule changes remove obsolete future unpaid paychecks and bill occurrences.
   Splits, manual reassignments, skips and edited amounts on removed dates are
@@ -27,7 +27,7 @@
 
 Back up the database and `config.php` before upgrading. Schema 8 to 9 requires
 signing in as an administrator and opening `install.php` to run the upgrade.
-The application version remains 0.9-beta; no release is made by these changes.
+Migration 009 adds nullable `bills.starts_on`; existing bills retain their behavior.
 
 ## 0.9-beta - 2026-11-15
 

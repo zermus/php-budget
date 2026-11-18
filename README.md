@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.9-beta.
+A simple self-hosted paycheck budgeting app. Version 0.10-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -28,6 +28,8 @@ all dependencies, so Composer is not required on the server.
 - MySQL 5.7+ / MariaDB 10.2+
 - Apache (with `mod_rewrite`) or Nginx + PHP-FPM
 - An SMTP relay for reminder emails (a local Postfix on 127.0.0.1:25 works)
+- OpenSSL AES-256-GCM and a valid base64 `app_key` decoding to 32 bytes for
+  new SMTP password writes (existing prerequisites, not new requirements)
 
 ## Directory layout
 
@@ -60,17 +62,24 @@ php-budget/
    by the installer, see below), then delete `public/install.php` if you like —
    it refuses to reinstall either way.
 
-## Upgrading from 0.8-beta
+## Upgrading from 0.9-beta
 
 Back up the database and `config.php`, including the existing `app_key`, before
 upgrading. Extract the new tarball over the installation while retaining
 `config.php`; do not replace the key used to read saved SMTP passwords.
+Restore `public/install.php` from the archive if you previously deleted it.
+Sign in as an administrator, open `install.php`, and run the schema 8 to 9
+upgrade. Migration `009_bill_starts_on.php` adds nullable `bills.starts_on`;
+existing bills keep their prior behavior. You may delete the installer again
+afterward. Existing installations do not need a setup token or new configuration
+keys; requirements are unchanged.
 
-Sign in again after upgrading: existing sessions are not carried over to the
-application-specific session cookie. No database migrations, new configuration
-keys, or requirement changes are needed; the schema remains version 8.
-Multiple php-budget installations on one host still share the same cookie
-name and root path, so their sessions are not isolated from each other.
+Session cookie paths now follow the path in `base_url`. Root installations use
+`/`; non-overlapping subdirectory installations have separate cookie paths.
+You may need to sign in again after upgrading. Cookie paths are not a security
+boundary between applications on the same origin.
+
+Review the schedule-change warning below before editing a pay schedule.
 
 ## Deployment modes
 
@@ -193,11 +202,17 @@ for anyone in the household from the Users page.
 - **Bills** recur monthly on a day, every N paychecks, or once. An
   every-N-paychecks bill is anchored to the first paycheck it applies to,
   which fixes its phase — e.g. two sets of bills alternating between
-  biweekly checks are two anchors one paycheck apart.
-- Changing the pay schedule reconciles upcoming generated dates in place.
-  Paid history, allocations, split/reassigned bills, skips, edited amounts,
-  paycheck overrides, and every-N phase are preserved. Protected checks that
-  no longer land on the new schedule remain visible rather than being deleted.
+  biweekly checks are two anchors one paycheck apart. New and reactivated
+  recurring bills start today, without generating earlier overdue dates.
+  Ordinary edits do not reset that start date; existing bills retain their
+  behavior, and one-time bills can still have overdue dates.
+- **Schedule-change warning:** reconciliation removes obsolete future unpaid
+  paychecks and bill occurrences. Splits, manual assignments, skips and edited
+  amounts on those removed dates are discarded; unpaid bills are reallocated
+  in full. Paid-protected dates and past history remain, including protected
+  checks that no longer land on the new schedule. Saving schedule and default
+  income together updates all non-overridden future checks, including dates
+  shared by both schedules.
   Overrides created before version 0.7-beta can only be identified when their
   amount differs from the then-current default; equal-to-default legacy
   overrides are indistinguishable from generated values.
@@ -206,9 +221,10 @@ for anyone in the household from the Users page.
 
 Extract the new tarball over the old directory (your `config.php` is never
 part of a release), sign in as an administrator, and open `install.php` —
-it detects an older schema and applies migrations. Back up your database
-first. The upgrade button is only offered to a signed-in administrator, so
-nobody else can run migrations on your install.
+it detects an older schema and applies migrations. Restore the installer
+from the archive if deleted. Back up your database and configuration/key first.
+The upgrade button is only offered to a signed-in administrator, so nobody else
+can run migrations on your install.
 
 ## Security notes
 

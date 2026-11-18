@@ -133,7 +133,7 @@ foreach (['mailFrom' => 190, 'mailFromName' => 190, 'smtpUsername' => 190, 'smtp
     };
     $_POST = array_replace($post, [$field => $value, 'smtpPassword' => 'synthetic-replacement']);
     if ($field === 'smtpHost') {
-        check(rejected(fn () => $fields($stored)), '255-character host retains existing DNS syntax validation');
+        check(strlen($value) === 254 && !rejected(fn () => $fields($stored)), '254-character DNS hostname with trailing dot accepted');
         $_POST[$field] = str_repeat('a', 63) . '.' . str_repeat('b', 63) . '.' . str_repeat('c', 63) . '.' . str_repeat('d', 61);
         check(!rejected(fn () => $fields($stored)), 'largest valid DNS hostname accepted');
         $_POST[$field] = $value;

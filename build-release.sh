@@ -3,7 +3,7 @@
 # Run from the project root on a machine with composer + tar.
 set -euo pipefail
 
-VERSION="0.9-beta"
+VERSION="0.10-beta"
 STAGE="php-budget-${VERSION}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT="${ROOT}/releases"
@@ -26,6 +26,11 @@ cp composer.json composer.lock config.sample.php .htaccess README.md CHANGELOG.m
 rm -f "$DEST"/public/*.log "$DEST"/mail*.log 2>/dev/null || true
 find "$DEST" -name '.DS_Store' -delete 2>/dev/null || true
 find "$DEST" -type d -name '.git' -prune -exec rm -rf {} + 2>/dev/null || true
+
+# No shipped file requires direct execution; cron invokes PHP explicitly.
+# config.php is excluded; keep deployed configuration and private backups restricted.
+find "$DEST" -type d -exec chmod 0755 {} +
+find "$DEST" -type f -exec chmod 0644 {} +
 
 mkdir -p "$OUT"
 echo ">> Creating ${OUT}/${STAGE}.tar.gz ..."
