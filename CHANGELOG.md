@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11-beta - 2026-11-17
 
 - Paying, skipping and editing bills no longer fail with a server error when
   someone else in the household loads the dashboard at the same moment.
