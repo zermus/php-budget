@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Auth;
 use App\Csrf;
 use App\Database;
+use App\Services\BudgetLock;
 use App\View;
 use DateTimeImmutable;
 
@@ -56,19 +57,22 @@ final class BillController
             return;
         }
 
-        $stmt = Database::pdo()->prepare(
-            'INSERT INTO bills (user_id, name, default_amount, recurrence_type, recurrence_value, notes, starts_on)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
-        );
-        $stmt->execute([
-            Auth::dataUserId(),
-            $fields['name'],
-            $fields['amount'],
-            $fields['type'],
-            $fields['value'],
-            $fields['notes'],
-            (new DateTimeImmutable('today'))->format('Y-m-d'),
-        ]);
+        $userId = Auth::dataUserId();
+        BudgetLock::run($userId, static function (\PDO $pdo) use ($userId, $fields): void {
+            $stmt = $pdo->prepare(
+                'INSERT INTO bills (user_id, name, default_amount, recurrence_type, recurrence_value, notes, starts_on)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+            $stmt->execute([
+                $userId,
+                $fields['name'],
+                $fields['amount'],
+                $fields['type'],
+                $fields['value'],
+                $fields['notes'],
+                (new DateTimeImmutable('today'))->format('Y-m-d'),
+            ]);
+        });
 
         flash('Bill added.');
         redirect('/bills');
@@ -116,29 +120,40 @@ final class BillController
             return;
         }
 
-        $pdo = Database::pdo();
-        $pdo->prepare(
-            'UPDATE bills SET name = ?, default_amount = ?, recurrence_type = ?,
-                    recurrence_value = ?, notes = ?
-             WHERE id = ? AND user_id = ?'
-        )->execute([
-            $fields['name'], $fields['amount'], $fields['type'],
-            $fields['value'], $fields['notes'],
-            (int) $bill['id'], $userId,
-        ]);
-
-        // Amount or recurrence changes rebuild the bill's future unpaid
-        // occurrences (regenerated on the next dashboard load). Paid history
-        // is untouched; manual edits and skips on future ones are reset.
-        $rebuilt = $fields['amount'] !== (string) $bill['default_amount']
-            || $fields['type'] !== (string) $bill['recurrence_type']
-            || $fields['value'] !== (string) $bill['recurrence_value'];
-
-        if ($rebuilt) {
+        $billId = (int) $bill['id'];
+        $rebuilt = BudgetLock::run($userId, function (\PDO $pdo) use ($userId, $billId, $fields): ?bool {
+            $bill = $this->userBill($billId, $userId, true);
+            if ($bill === null) {
+                return null;
+            }
             $pdo->prepare(
-                'DELETE FROM bill_occurrences
-                 WHERE bill_id = ? AND user_id = ? AND paid = 0 AND due_date >= ?'
-            )->execute([(int) $bill['id'], $userId, (new DateTimeImmutable('today'))->format('Y-m-d')]);
+                'UPDATE bills SET name = ?, default_amount = ?, recurrence_type = ?,
+                        recurrence_value = ?, notes = ?
+                 WHERE id = ?'
+            )->execute([
+                $fields['name'], $fields['amount'], $fields['type'],
+                $fields['value'], $fields['notes'],
+                (int) $bill['id'],
+            ]);
+
+            // Amount or recurrence changes rebuild the bill's future unpaid
+            // occurrences (regenerated on the next dashboard load). Paid history
+            // is untouched; manual edits and skips on future ones are reset.
+            $rebuilt = $fields['amount'] !== (string) $bill['default_amount']
+                || $fields['type'] !== (string) $bill['recurrence_type']
+                || $fields['value'] !== (string) $bill['recurrence_value'];
+
+            if ($rebuilt) {
+                $pdo->prepare(
+                    'DELETE FROM bill_occurrences
+                     WHERE bill_id = ? AND user_id = ? AND paid = 0 AND due_date >= ?'
+                )->execute([(int) $bill['id'], $userId, (new DateTimeImmutable('today'))->format('Y-m-d')]);
+            }
+            return $rebuilt;
+        });
+        if ($rebuilt === null) {
+            flash('Bill not found.', 'error');
+            redirect('/bills');
         }
 
         flash($rebuilt ? 'Bill saved; its upcoming occurrences were rebuilt.' : 'Bill saved.');
@@ -151,24 +166,29 @@ final class BillController
         Csrf::require();
         $userId = Auth::dataUserId();
 
-        $bill = $this->userBill(input_int('id'), $userId);
-        if ($bill === null) {
+        $billId = input_int('id');
+        $newActive = BudgetLock::run($userId, function (\PDO $pdo) use ($userId, $billId): ?int {
+            $bill = $this->userBill($billId, $userId, true);
+            if ($bill === null) {
+                return null;
+            }
+            $newActive = empty($bill['active']) ? 1 : 0;
+            $pdo->prepare('UPDATE bills SET active = ?, starts_on = CASE WHEN ? = 1 THEN ? ELSE starts_on END WHERE id = ?')
+                ->execute([$newActive, $newActive, (new DateTimeImmutable('today'))->format('Y-m-d'), (int) $bill['id']]);
+
+            if ($newActive === 0) {
+                // Deactivating clears upcoming unpaid occurrences; paid rows stay
+                // as history. Reactivating regenerates lazily.
+                $pdo->prepare(
+                    'DELETE FROM bill_occurrences
+                     WHERE bill_id = ? AND user_id = ? AND paid = 0'
+                )->execute([(int) $bill['id'], $userId]);
+            }
+            return $newActive;
+        });
+        if ($newActive === null) {
             flash('Bill not found.', 'error');
             redirect('/bills');
-        }
-
-        $newActive = empty($bill['active']) ? 1 : 0;
-        $pdo = Database::pdo();
-        $pdo->prepare('UPDATE bills SET active = ?, starts_on = CASE WHEN ? = 1 THEN ? ELSE starts_on END WHERE id = ? AND user_id = ?')
-            ->execute([$newActive, $newActive, (new DateTimeImmutable('today'))->format('Y-m-d'), (int) $bill['id'], $userId]);
-
-        if ($newActive === 0) {
-            // Deactivating clears upcoming unpaid occurrences; paid rows stay
-            // as history. Reactivating regenerates lazily.
-            $pdo->prepare(
-                'DELETE FROM bill_occurrences
-                 WHERE bill_id = ? AND user_id = ? AND paid = 0'
-            )->execute([(int) $bill['id'], $userId]);
         }
 
         flash($newActive ? 'Bill reactivated.' : 'Bill deactivated; upcoming occurrences removed.');
@@ -180,10 +200,17 @@ final class BillController
         Auth::requireBudgeter();
         Csrf::require();
 
-        $stmt = Database::pdo()->prepare('DELETE FROM bills WHERE id = ? AND user_id = ?');
-        $stmt->execute([input_int('id'), Auth::dataUserId()]);
+        $userId = Auth::dataUserId();
+        $billId = input_int('id');
+        $deleted = BudgetLock::run($userId, function (\PDO $pdo) use ($userId, $billId): bool {
+            if ($this->userBill($billId, $userId, true) === null) {
+                return false;
+            }
+            $pdo->prepare('DELETE FROM bills WHERE id = ?')->execute([$billId]);
+            return true;
+        });
 
-        flash($stmt->rowCount() > 0 ? 'Bill deleted, including its history.' : 'Bill not found.', $stmt->rowCount() > 0 ? 'success' : 'error');
+        flash($deleted ? 'Bill deleted, including its history.' : 'Bill not found.', $deleted ? 'success' : 'error');
         redirect('/bills');
     }
 
@@ -252,9 +279,9 @@ final class BillController
     }
 
     /** @return array<string, mixed>|null */
-    private function userBill(int $billId, int $userId): ?array
+    private function userBill(int $billId, int $userId, bool $lock = false): ?array
     {
-        $stmt = Database::pdo()->prepare('SELECT * FROM bills WHERE id = ? AND user_id = ?');
+        $stmt = Database::pdo()->prepare('SELECT * FROM bills WHERE id = ? AND user_id = ?' . ($lock ? ' FOR UPDATE' : ''));
         $stmt->execute([$billId, $userId]);
         $row = $stmt->fetch();
 

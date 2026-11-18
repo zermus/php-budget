@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Paying, skipping and editing bills no longer fail with a server error when
+  someone else in the household loads the dashboard at the same moment.
+
 ## 0.10-beta - 2026-11-18
 
 - Schedule changes remove obsolete future unpaid paychecks and bill occurrences.
