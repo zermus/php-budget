@@ -42,7 +42,7 @@ if (($argv[1] ?? '') === '--rollback') {
         'reminderLeadDays' => '1', 'windowDays' => '90', 'mailTransport' => 'smtp',
         'smtpHost' => 'changed.example', 'smtpPort' => '587', 'smtpEncryption' => 'tls',
         'smtpUsername' => 'synthetic-user', 'smtpPassword' => 'synthetic-replacement'];
-    (new ReflectionMethod(SettingsController::class, 'saveSettings'))->invoke(new SettingsController(), []);
+    (new ReflectionMethod(SettingsController::class, 'saveSettings'))->invoke(new SettingsController());
     exit(1);
 }
 
@@ -144,6 +144,12 @@ foreach (['mailFrom' => 190, 'mailFromName' => 190, 'smtpUsername' => 190, 'smtp
     $_POST[$field] .= 'x';
     check(rejected(fn () => $fields($stored)), "$field rejects limit plus one");
 }
+$_POST = array_replace($post, ['smtpPassword' => ' ' . str_repeat('é', 366) . ' ']);
+check(Secrets::decrypt($fields($stored)['smtp_password']) === $_POST['smtpPassword'], '734-byte SMTP password preserves whitespace');
+$_POST['smtpPassword'] .= 'x';
+check(rejected(fn () => $fields($stored)), '735-byte SMTP password is rejected');
+$_POST = array_replace($post, ['mailTransport' => 'log']);
+check($fields($unreadable)['smtp_password'] === $unreadable['smtp_password'], 'non-SMTP save preserves unchanged unreadable credentials');
 $_POST = $post;
 $legacy = array_replace($stored, ['smtp_password' => 'synthetic-legacy']);
 check(Secrets::isEncrypted($fields($legacy)['smtp_password']), 'legacy retention encrypts');
@@ -155,7 +161,7 @@ foreach (['', 'invalid', 'base64:' . base64_encode('short')] as $key) {
 }
 App::init($config);
 $reminders = file_get_contents(APP_ROOT . '/bin/send_reminders.php');
-check(str_contains($reminders, 'Mailer::settingsFor($user)'), 'reminders use the tested profile resolver');
+check(str_contains($reminders, 'Mailer::settingsFor($settings)'), 'reminders use the tested profile resolver');
 
 foreach (['openssl_encrypt', 'openssl_get_cipher_methods', 'openssl_decrypt'] as $disabled) {
     $code = 'require ' . var_export(APP_ROOT . '/src/App.php', true) . '; require ' . var_export(APP_ROOT . '/src/Secrets.php', true) . ';'
@@ -234,7 +240,7 @@ if (getenv('PHP_BUDGET_TEST_DISPOSABLE') === '1' && is_file(APP_ROOT . '/config.
                 ->execute([$owner, "Reminder $name", json_encode(['date'=>date('Y-m-d')])]);
         }
         // A database trigger exercises a real refresh failure without a production test hook.
-        $pdo->exec("CREATE TRIGGER reminder_fault BEFORE INSERT ON paychecks FOR EACH ROW BEGIN IF NEW.user_id = {$ids[0]} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'synthetic refresh failure'; END IF; END");
+        $pdo->exec("CREATE TRIGGER reminder_fault BEFORE INSERT ON allocations FOR EACH ROW BEGIN IF NEW.user_id = {$ids[0]} THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'synthetic refresh failure'; END IF; END");
         $log = APP_ROOT . '/mail.log';
         $offset = is_file($log) ? filesize($log) : 0;
         $proc = proc_open([PHP_BINARY, APP_ROOT . '/bin/send_reminders.php'], [1=>['pipe','w'],2=>['pipe','w']], $pipes);
@@ -244,6 +250,22 @@ if (getenv('PHP_BUDGET_TEST_DISPOSABLE') === '1' && is_file(APP_ROOT . '/config.
         check(proc_close($proc) === 1 && str_contains($out, '1 budget(s) failed'), 'reminder failure counts budget and exits 1');
         check(str_contains($err, "owner {$ids[0]} failed:") && str_contains($err, "synthetic refresh failure"), 'reminder reports owner and refresh error');
         check(str_contains(substr(file_get_contents($log), $offset), 'reminder-later@example.test'), 'later owner reminder delivered through log transport');
+        foreach (['paychecks', 'bill_occurrences', 'allocations'] as $table) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) FROM $table WHERE user_id = ?");
+            $stmt->execute([$ids[0]]);
+            check((int) $stmt->fetchColumn() === 0, "allocation stage failure rolls back $table");
+        }
+        $pdo->exec('DROP TRIGGER reminder_fault');
+        $pdo->prepare("UPDATE user_settings SET mail_transport = 'smtp', smtp_password = 'enc:v1:invalid' WHERE user_id = ?")
+            ->execute([$ids[0]]);
+        $pdo->prepare("INSERT INTO users (email,password_hash,role,owner_id,receive_reminders) VALUES (?, 'test','viewer',?,1)")
+            ->execute(['reminder-member@example.test', $ids[0]]);
+        $proc = proc_open([PHP_BINARY, APP_ROOT . '/bin/send_reminders.php'], [1=>['pipe','w'],2=>['pipe','w']], $pipes);
+        $out = stream_get_contents($pipes[1]);
+        $err = stream_get_contents($pipes[2]);
+        fclose($pipes[1]); fclose($pipes[2]);
+        check(proc_close($proc) === 1 && str_contains($out, '1 message(s)') && str_contains($out, '1 budget(s) failed'), 'mixed delivery counts one failed budget and continues');
+        check(substr_count($err, 'Reminder delivery failed') === 2 && str_contains($err, 'cannot be decrypted'), 'both recipients fail safely without contacting SMTP');
     } finally {
         $pdo->exec('DROP TRIGGER IF EXISTS reminder_fault');
         foreach ($ids as $owner) {

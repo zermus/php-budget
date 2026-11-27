@@ -32,4 +32,4 @@
         <div class="message error"><?= e($error) ?></div>
     <?php endif; ?>
 </div>
-<script src="<?= e(asset('js/password.js')) ?>"></script>
+<script src="<?= e(url('assets/js/password.js')) ?>"></script>

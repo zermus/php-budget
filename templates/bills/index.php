@@ -33,7 +33,7 @@
                             <button type="submit" class="btn small"><?= empty($bill['active']) ? 'Activate' : 'Deactivate' ?></button>
                         </form>
                         <form action="<?= e(url('/bills/delete')) ?>" method="post" class="inline"
-                              onsubmit="return confirm('Delete this bill AND its entire paid history? Deactivate instead to keep history.');">
+                              data-confirm="Delete this bill AND its entire paid history? Deactivate instead to keep history.">
                             <?= Csrf::field() ?>
                             <input type="hidden" name="id" value="<?= (int) $bill['id'] ?>">
                             <button type="submit" class="btn small danger">Delete</button>

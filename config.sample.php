@@ -22,8 +22,12 @@ return [
     // public/ deploy (document root = public/):   https://budget.your.website.com/
     'base_url' => 'https://your.website.com/budget/',
 
+    // Exact IPs of reverse proxies that overwrite X-Forwarded-Proto. Keep empty
+    // unless those proxies are trusted and direct access is controlled.
+    'trusted_proxies' => [],
+
     // Authorizes the one-time creation of the first account owner. Generate a
-    // random value, keep it private, and remove this entry after installation:
+    // random value (at least 32 bytes), keep it private, and remove this entry after installation:
     //   php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
     'setup_token' => '',
 
@@ -40,7 +44,7 @@ return [
     // it or replace the password; clearing both username/password removes auth.
     'app_key' => '',
 
-    // Email is configured in the app: sign in as the administrator and use
+    // Email is configured in the app: sign in as the account owner and use
     // Settings -> Email (transport, from address, SMTP host/port/auth/
     // encryption), with a "Send test email" button to verify it.
     //
@@ -50,6 +54,9 @@ return [
     // Transport/from fields still fall back individually. New installs can
     // delete this optional block entirely (log_path remains server-managed).
     'mail' => [
+        // Optional exact SMTP hostname/IP allowlist for all delivery, including cron.
+        // Empty leaves existing relay choices unrestricted.
+        'allowed_smtp_hosts' => [],
         // Where 'log' transport writes. Handy for testing without a relay.
         'log_path' => __DIR__ . '/mail.log',
     ],

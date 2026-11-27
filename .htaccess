@@ -1,12 +1,12 @@
-# php-budget flat-deploy shim.
-# Used when the app is extracted directly into a web root. If your document
-# root points at public/ instead, this file is never consulted.
-
-# Never serve the config, dependency manifests, or logs (mail.log holds
-# reminder emails when the "log" transport is used).
-<FilesMatch "^(config(\.sample)?\.php|composer\.(json|lock)|.*\.log)$">
+<FilesMatch "(?i)^(\.|config.*\.php$|composer\.(json|lock)$|.*\.log$|dev-router\.php$|build-release\.sh$)">
     Require all denied
 </FilesMatch>
+
+<If "%{REQUEST_URI} =~ m#(?i)/(\.[^/]*|src|templates|migrations|vendor|bin|releases|tests)(/|$)#">
+    Require all denied
+</If>
+
+Options -Indexes
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -19,12 +19,4 @@
 
     # Map everything else into public/.
     RewriteRule ^(.*)$ public/$1 [L]
-</IfModule>
-
-# Without mod_rewrite the app won't route anyway, but internals must still
-# stay private. The optional prefix covers root and subdirectory installs.
-<IfModule !mod_rewrite.c>
-    <IfModule mod_alias.c>
-        RedirectMatch 403 ^(/.*)?/(src|templates|migrations|vendor|bin|releases|tests)(/|$)
-    </IfModule>
 </IfModule>

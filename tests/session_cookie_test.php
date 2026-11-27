@@ -160,6 +160,11 @@ try {
         $stmt->execute([$id]);
         check($status === 200 && $stmt->fetch() === $created && !str_contains($errorBody,'Something went wrong'), 'oversized bill edit rejected without mutation');
     }
+    $notes = str_repeat('é', 32767) . 'x';
+    check(request('/bills/edit', $cookies, array_replace($bill, ['id'=>$created['id'],'notes'=>$notes]))[0] === 302, '65,535-byte bill note saves');
+    check(request('/bills/edit', $cookies, array_replace($bill, ['id'=>$created['id'],'notes'=>$notes . 'x']))[0] === 200, '65,536-byte bill note is rejected');
+    $stmt->execute([$id]);
+    check($stmt->fetch()['notes'] === $notes, 'rejected oversized note leaves stored note intact');
     $pdo->prepare("UPDATE bills SET starts_on='2000-01-01' WHERE id=?")->execute([$created['id']]);
     check(request('/bills/edit', $cookies, array_replace($bill,['id'=>$created['id'],'name'=>'Edited']))[0] === 302, 'ordinary bill edit succeeds');
     $stmt->execute([$id]); check($stmt->fetch()['starts_on'] === '2000-01-01', 'ordinary edit preserves starts_on');
@@ -186,9 +191,55 @@ try {
     [$status,$json] = request('/occurrences/amount', $cookies, ['csrf_token'=>$csrf,'id'=>$occId,'amount'=>'120']);
     check($status === 200 && json_decode($json,true)['success'], 'inline amount edit succeeds');
     check(request('/occurrences/skip', $cookies, ['csrf_token'=>$csrf,'id'=>$occId])[0] === 302, 'skip form works with renewed CSRF');
+    check(request('/allocations/edit?occurrence_id='.$occId, $cookies)[0] === 302, 'skipped rows cannot open the split editor');
+    check(request('/occurrences/paid', $cookies, ['csrf_token'=>$csrf,'id'=>$occId,'paid'=>'1'])[0] === 404, 'skipped rows cannot be paid');
+    check(request('/occurrences/amount', $cookies, ['csrf_token'=>$csrf,'id'=>$occId,'amount'=>'121'])[0] === 404, 'skipped rows cannot be edited');
+    check(request('/occurrences/paid', $cookies, ['csrf_token'=>[$csrf],'id'=>$occId,'paid'=>'1'])[0] === 403, 'non-string CSRF gets a JSON authorization failure');
+    check(request('/settings', $cookies, ['csrf_token'=>[$csrf],'action'=>'password'])[0] === 403, 'non-string CSRF gets an HTML authorization failure');
     check(request('/bills/delete', $cookies, ['csrf_token'=>$csrf,'id'=>$created['id']])[0] === 302, 'bill deletion succeeds');
+    $oneTime = array_replace($bill, ['name'=>'One-time rebuild fixture', 'amount'=>'50', 'recurrenceType'=>'one_time', 'oneTimeDate'=>date('Y-m-d', strtotime('-3 weeks'))]);
+    check(request('/bills/create', $cookies, $oneTime)[0] === 302, 'one-time bill is created');
+    $stmt = $pdo->prepare('SELECT id FROM bills WHERE user_id=? AND name=?');
+    $stmt->execute([$id, $oneTime['name']]);
+    $oneTime['id'] = $stmt->fetchColumn();
     request('/dashboard', $cookies);
-    check(request('/logout', $cookies, ['csrf_token' => token($body)])[0] === 302, 'CSRF-protected logout succeeds');
+    $state = $pdo->prepare('SELECT due_date,paid,skipped FROM bill_occurrences WHERE bill_id=? ORDER BY due_date');
+    $insert = $pdo->prepare('INSERT INTO bill_occurrences (user_id,bill_id,due_date,amount,paid,skipped) VALUES (?,?,?,50,?,?)');
+    $paidDate = date('Y-m-d', strtotime('-5 weeks'));
+    $insert->execute([$id,$oneTime['id'],$paidDate,1,0]);
+    $insert->execute([$id,$oneTime['id'],date('Y-m-d', strtotime('-4 weeks')),0,1]);
+    foreach (['one_time','monthly_day','one_time'] as $index=>$type) {
+        $state->execute([$oneTime['id']]);
+        check(count($state->fetchAll()) > 1, 'rebuild fixture has unpaid state before edit');
+        $edit = array_replace($oneTime, ['recurrenceType'=>$type, 'oneTimeDate'=>date('Y-m-d', strtotime('+'.($index+1).' days'))]);
+        check(request('/bills/edit', $cookies, $edit)[0] === 302, 'one-time edit or conversion saved');
+        $state->execute([$oneTime['id']]);
+        $remaining = $state->fetchAll();
+        check(count($remaining) === 1 && $remaining[0]['paid'] && $remaining[0]['due_date'] === $paidDate, 'rebuild discards superseded unpaid rows and preserves paid history');
+        $insert->execute([$id,$oneTime['id'],date('Y-m-d', strtotime('-4 weeks')),0,0]);
+    }
+
+    $coadmin = 'coadmin@example.test';
+    $pdo->prepare("UPDATE users SET role = 'admin', email = ? WHERE owner_id = ?")->execute([$coadmin,$id]);
+    $adminCookies = [];
+    check(login($adminCookies, $coadmin, 'éAbcdef1#')[0] === 302, 'co-admin can sign in');
+    [, $adminForm] = request('/settings', $adminCookies);
+    $adminCsrf = token($adminForm);
+    check(!str_contains($adminForm, 'name="smtpHost"'), 'co-admin has no SMTP edit controls');
+    $unauthorizedDraft = ['mailTransport'=>'smtp','smtpHost'=>'not-a-valid-host!', 'smtpPassword'=>'synthetic-only'];
+    request('/settings/test-email', $adminCookies, ['csrf_token'=>$adminCsrf] + $unauthorizedDraft);
+    [, $adminForm] = request('/settings', $adminCookies);
+    check(str_contains($adminForm,'Test email sent') && !str_contains($adminForm,'synthetic-only'), 'co-admin uses saved log profile, ignoring unsaved relay edits');
+    request('/settings', $adminCookies, ['csrf_token'=>$adminCsrf,'action'=>'reminders','receiveReminders'=>'1','id'=>(string)$id]);
+    $pref = $pdo->prepare('SELECT receive_reminders FROM users WHERE email IN (?, ?) ORDER BY owner_id IS NOT NULL');
+    $pdo->prepare('UPDATE users SET receive_reminders=0 WHERE id=?')->execute([$id]);
+    request('/settings', $adminCookies, ['csrf_token'=>$adminCsrf,'action'=>'reminders','receiveReminders'=>'1','id'=>(string)$id]);
+    $pref->execute([$coadmin,$email]);
+    check(array_map('intval',$pref->fetchAll(PDO::FETCH_COLUMN)) === [0,1], 'co-admin preference targets only their own account');
+    request('/dashboard', $cookies);
+    [$status, , $logoutHeaders] = request('/logout', $cookies, ['csrf_token' => token($body)]);
+    check($status === 302 && str_contains(implode(' ', $logoutHeaders), 'Max-Age=0'), 'logout expires the application cookie');
+    cookieChecks($logoutHeaders);
     check(request('/dashboard', $cookies)[0] === 302, 'logout removes authentication');
     session_id($siblingId);
     session_start();

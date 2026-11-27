@@ -66,8 +66,8 @@ set_exception_handler(static function (Throwable $e): void {
 
     header('Content-Type: text/html; charset=utf-8');
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Error</title></head>'
-        . '<body style="font-family:Arial,sans-serif;background:#121212;color:#c0c0c0;text-align:center;padding-top:10vh">'
-        . '<h1 style="color:#4caf82">Something went wrong</h1>'
+        . '<body>'
+        . '<h1>Something went wrong</h1>'
         . '<p>An unexpected error occurred. Details have been written to the server error log.</p>'
         . '</body></html>';
 });
@@ -78,7 +78,8 @@ if (PHP_SAPI !== 'cli') {
     // No framing (clickjacking a paid checkbox or a Remove button), no MIME
     // sniffing, and budget URLs never leak to other sites via Referer.
     header('X-Frame-Options: DENY');
-    header("Content-Security-Policy: frame-ancestors 'none'");
+    header("Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'; "
+        . "base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
 }
@@ -90,8 +91,7 @@ if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {
     session_name('PHPBUDGETSESSID');
     $cookiePath = parse_url((string) App::config('base_url', '/'), PHP_URL_PATH) ?: '/';
 
-    $secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+    $secure = secure_session_request($_SERVER);
 
     session_set_cookie_params([
         'lifetime' => 0,

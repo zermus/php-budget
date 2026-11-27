@@ -17,6 +17,7 @@
             ?>
             <div class="alloc-row">
                 <select name="paycheck_id[]">
+                    <option value="">Choose a paycheck</option>
                     <?php foreach ($paychecks as $paycheck): ?>
                         <option value="<?= (int) $paycheck['id'] ?>"
                             <?= (int) ($allocation['paycheck_id'] ?? 0) === (int) $paycheck['id'] ? 'selected' : '' ?>>
@@ -43,27 +44,11 @@
     <?php if (empty($occurrence['paid'])): ?>
     <hr>
     <form method="post" action="<?= e(url('/occurrences/skip')) ?>"
-          onsubmit="return confirm('Skip this occurrence? It will disappear from the dashboard and reminders. The bill\'s other occurrences are unaffected.');">
+          data-confirm="Skip this occurrence? It will disappear from the dashboard and reminders. Other occurrences are unaffected.">
         <?= Csrf::field() ?>
         <input type="hidden" name="id" value="<?= (int) $occurrence['id'] ?>">
         <button type="submit" class="btn danger">Skip this occurrence</button>
     </form>
     <?php endif; ?>
 </div>
-<script>
-(function () {
-    var rows = document.getElementById('alloc-rows');
-
-    document.getElementById('add-row').addEventListener('click', function () {
-        var row = rows.querySelector('.alloc-row').cloneNode(true);
-        row.querySelector('input').value = '';
-        rows.appendChild(row);
-    });
-
-    rows.addEventListener('click', function (event) {
-        if (event.target.classList.contains('remove-row') && rows.querySelectorAll('.alloc-row').length > 1) {
-            event.target.closest('.alloc-row').remove();
-        }
-    });
-})();
-</script>
+<script src="<?= e(asset('js/allocation-form.js')) ?>"></script>

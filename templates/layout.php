@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($title ?? 'Budget App') ?></title>
     <link rel="icon" type="image/svg+xml" href="<?= e(url('/favicon.svg')) ?>">
-    <link rel="stylesheet" href="<?= e(asset('css/app.css')) ?>">
+    <link rel="stylesheet" href="<?= e(($unversionedAssets ?? false) ? url('assets/css/app.css') : asset('css/app.css')) ?>">
 </head>
 <body>
     <?php if (Auth::user() !== null): ?>
@@ -36,6 +36,9 @@
 
     <?= $content ?>
 
+    <?php if (Auth::user() !== null): ?>
+    <script src="<?= e(asset('js/confirm.js')) ?>"></script>
+    <?php endif; ?>
     <?php foreach ($scripts ?? [] as $script): ?>
     <script src="<?= e($script) ?>"></script>
     <?php endforeach; ?>

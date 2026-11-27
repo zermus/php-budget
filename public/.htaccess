@@ -1,3 +1,13 @@
+<FilesMatch "(?i)^(\.|config.*\.php$|composer\.(json|lock)$|.*\.log$|dev-router\.php$|build-release\.sh$)">
+    Require all denied
+</FilesMatch>
+
+<If "%{REQUEST_URI} =~ m#(?i)/(\.[^/]*|src|templates|migrations|vendor|bin|releases|tests)(/|$)#">
+    Require all denied
+</If>
+
+Options -Indexes
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
 

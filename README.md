@@ -93,6 +93,19 @@ boundary between applications on the same origin.
 
 Review the schedule-change warning below before editing a pay schedule.
 
+## Upgrade and operator guidance
+
+- Configure the public HTTPS `base_url`. If relying on forwarded scheme metadata,
+  set `trusted_proxies` to the exact connecting proxy IPs and configure those
+  proxies to overwrite `X-Forwarded-Proto`. Direct clients are not trusted.
+- For new setup, use a private random token of at least 32 bytes as shown in
+  `config.sample.php`. Existing installations do not need to set one for upgrades.
+- Passwords are limited to 1,024 bytes. Reset longer legacy member passwords
+  from Users. If the owner cannot sign in, back up the database and use trusted
+  local database administration to replace the owner's `users.password_hash`
+  with an Argon2id hash of a new compliant password. Do not edit the email,
+  role or ownership. This invalidates existing sessions for that account.
+
 ## Deployment modes
 
 **Recommended: document root = `public/`.** Application code, templates,
@@ -120,7 +133,8 @@ server {
 **Flat deploy (Apache only):** extract the whole tree into a web directory
 (e.g. `/var/www/html/budget/`). The bundled `.htaccess` files rewrite
 requests into `public/` and deny access to `src/`, `config.php`, and the
-other internals. Do not deploy flat on Nginx — it does not read `.htaccess`,
+other internals even when rewrite is unavailable. Routing still requires
+`mod_rewrite`; keep Apache overrides enabled. Do not deploy flat on Nginx — it does not read `.htaccess`,
 so the internals would be exposed.
 
 ## Reminder cron
@@ -132,11 +146,12 @@ so the internals would be exposed.
 Runs nightly: each user gets one summary email of unpaid bills that are due
 within their reminder lead time (Settings, default 1 day) or overdue. No
 send-tracking is kept — a bill still unpaid tomorrow simply appears in the
-next day's summary.
+next day's summary. A failed delivery causes the job to exit nonzero after
+checking the remaining budgets. Rerunning the job can resend successful deliveries.
 
 ## Email
 
-Email is configured in the app: sign in as the administrator and open
+Email is configured in the app: sign in as the account owner and open
 **Settings → Email**. There are three transports:
 
 - **SMTP relay** — host, port, encryption, and optional username/password.
@@ -147,10 +162,15 @@ Email is configured in the app: sign in as the administrator and open
 - **Log to a file** — appends to `mail.log_path` and sends nothing; useful
   for testing.
 
-**Send test email** sends to the signed-in administrator using whatever is
-currently in the form — saved or not — and reports the real failure reason
-(e.g. "Could not connect to SMTP host") if it doesn't work. SMTP gives up
-after 10 seconds rather than hanging.
+**Send test email** sends to the signed-in administrator. The owner can test
+unsaved changes; co-administrators can only test the saved profile. Failures
+are reported without including SMTP transcripts. Owners and co-admins can
+change their own reminder opt-in from Settings.
+
+Operators can set `mail.allowed_smtp_hosts` to a list of exact hostnames or
+IP addresses for both web and cron delivery. Omit it or use an empty list
+for existing behavior. Include any intended local relay explicitly when
+using the list. This filters configured relay names, not DNS results.
 
 The `mail` block in `config.php` provides a server-managed SMTP profile only
 when **all** account SMTP fields are NULL. Any account SMTP override selects
