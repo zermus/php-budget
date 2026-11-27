@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App;
 
+use App\Installer\Migrator;
 use PDOException;
 
 /**
@@ -42,6 +43,7 @@ final class LoginThrottle
             $stmt->execute([$key, $ip, $ip, $key, $key, $ip]);
             $row = $stmt->fetch() ?: [];
         } catch (PDOException $e) {
+            self::requireLegacy($e);
             return false;
         }
 
@@ -57,9 +59,11 @@ final class LoginThrottle
             $pdo->prepare('INSERT INTO login_attempts (email_hash, ip, attempted_at) VALUES (?, ?, NOW())')
                 ->execute([self::emailKey($email), $ip]);
             // Keep the table small; nothing older than a day is ever consulted.
-            $pdo->exec('DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL 1 DAY');
+            if (random_int(1, 100) === 1) {
+                $pdo->exec('DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL 1 DAY');
+            }
         } catch (PDOException $e) {
-            // Pre-upgrade schema: throttling is simply unavailable.
+            self::requireLegacy($e);
         }
     }
 
@@ -70,12 +74,51 @@ final class LoginThrottle
             Database::pdo()->prepare('DELETE FROM login_attempts WHERE email_hash = ? AND ip = ?')
                 ->execute([self::emailKey($email), $ip]);
         } catch (PDOException $e) {
+            self::requireLegacy($e);
         }
+    }
+
+    public static function confirmationBlocked(int $userId): bool
+    {
+        $stmt = Database::pdo()->prepare(
+            'SELECT COUNT(*) FROM login_attempts WHERE email_hash = ? AND ip = ?
+             AND attempted_at > NOW() - INTERVAL ' . self::WINDOW_MINUTES . ' MINUTE'
+        );
+        $stmt->execute([self::confirmationKey($userId), 'confirmation']);
+        return (int) $stmt->fetchColumn() >= self::MAX_PER_EMAIL_IP;
+    }
+
+    public static function recordConfirmation(int $userId, bool $valid): void
+    {
+        $sql = $valid ? 'DELETE FROM login_attempts WHERE email_hash = ? AND ip = ?'
+            : 'INSERT INTO login_attempts (email_hash, ip, attempted_at) VALUES (?, ?, NOW())';
+        Database::pdo()->prepare($sql)->execute([self::confirmationKey($userId), 'confirmation']);
+    }
+
+    private static function confirmationKey(int $userId): string
+    {
+        return hash('sha256', "password-confirmation:\0" . $userId);
+    }
+
+    private static function requireLegacy(PDOException $e): void
+    {
+        if (($e->errorInfo[0] ?? null) === '42S02' && (int) ($e->errorInfo[1] ?? 0) === 1146) {
+            $version = (new Migrator(Database::pdo()))->currentVersion();
+            if ($version >= 1 && $version < 6) {
+                return;
+            }
+        }
+        throw $e;
+    }
+
+    public static function normalizeEmail(string $email): string
+    {
+        return mb_strtolower(trim($email), 'UTF-8');
     }
 
     /** Emails are stored hashed: the table is a counter, not an address book. */
     private static function emailKey(string $email): string
     {
-        return hash('sha256', strtolower(trim($email)));
+        return hash('sha256', self::normalizeEmail($email));
     }
 }

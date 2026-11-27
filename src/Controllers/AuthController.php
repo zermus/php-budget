@@ -36,17 +36,16 @@ final class AuthController
         }
         Csrf::require();
 
+        if (!input_strings_valid(['email', 'password'])) {
+            http_response_code(400);
+            echo View::render('auth/login', ['title' => 'Budget Login', 'error' => 'Invalid sign-in form.']);
+            return;
+        }
         $email = input_string('email');
-        $password = (string) ($_POST['password'] ?? '');
+        $password = input_raw_string('password');
         $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
 
-        $stmt = Database::pdo()->prepare('SELECT * FROM users WHERE email = ?');
-        $stmt->execute([$email]);
-        $user = $stmt->fetch();
-        $throttleEmail = $user ? (string) $user['email'] : $email;
-
-        // Checked before the password, so a locked-out guesser learns nothing.
-        if (LoginThrottle::tooManyAttempts($throttleEmail, $ip)) {
+        if (LoginThrottle::tooManyAttempts($email, $ip)) {
             http_response_code(429);
             echo View::render('auth/login', [
                 'title' => 'Budget Login',
@@ -57,15 +56,16 @@ final class AuthController
             return;
         }
 
-        if ($user) {
-            $valid = password_verify($password, $user['password_hash']);
-        } else {
-            password_verify($password, self::DUMMY_HASH);
-            $valid = false;
-        }
+        $stmt = Database::pdo()->prepare('SELECT * FROM users WHERE email = ?');
+        $stmt->execute([LoginThrottle::normalizeEmail($email)]);
+        $user = $stmt->fetch();
+        $matches = $user && LoginThrottle::normalizeEmail($user['email']) === LoginThrottle::normalizeEmail($email);
+        $valid = password_length_valid($password)
+            && password_verify($password, $matches ? $user['password_hash'] : self::DUMMY_HASH)
+            && $matches;
 
         if (!$valid) {
-            LoginThrottle::recordFailure($throttleEmail, $ip);
+            LoginThrottle::recordFailure($email, $ip);
             echo View::render('auth/login', [
                 'title' => 'Budget Login',
                 'error' => 'Invalid email or password.',
@@ -74,7 +74,7 @@ final class AuthController
             return;
         }
 
-        LoginThrottle::clear($throttleEmail, $ip);
+        LoginThrottle::clear($email, $ip);
 
         // Transparently upgrade hashes if the algorithm or cost changes.
         if (password_needs_rehash($user['password_hash'], PASSWORD_ARGON2ID)) {

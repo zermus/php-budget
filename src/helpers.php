@@ -76,10 +76,39 @@ function json_response(array $payload, int $status = 200): never
  */
 function input_string(string $key, ?array $source = null): string
 {
-    $source ??= $_POST;
-    $value = $source[$key] ?? '';
+    return trim(input_raw_string($key, $source));
+}
 
-    return is_string($value) ? trim($value) : '';
+function input_raw_string(string $key, ?array $source = null): string
+{
+    $value = ($source ?? $_POST)[$key] ?? '';
+
+    return is_string($value) ? $value : '';
+}
+
+function input_strings_valid(array $keys, ?array $source = null): bool
+{
+    $source ??= $_POST;
+    foreach ($keys as $key) {
+        if (array_key_exists($key, $source) && !is_string($source[$key])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function input_draft(array $keys): array
+{
+    return array_filter(array_intersect_key($_POST, array_flip($keys)), 'is_string');
+}
+
+function input_checkbox(string $key): ?bool
+{
+    return match ($_POST[$key] ?? '0') {
+        '1', 'on' => true,
+        '0', '' => false,
+        default => null,
+    };
 }
 
 /**
@@ -93,7 +122,7 @@ function input_int(string $key, ?array $source = null): int
     $source ??= $_POST;
     $value = $source[$key] ?? null;
 
-    return is_numeric($value) ? (int) $value : 0;
+    return is_string($value) && ctype_digit($value) ? (int) $value : 0;
 }
 
 /**
@@ -173,13 +202,43 @@ function describe_recurrence(array $bill): string
     return '—';
 }
 
-/**
- * Server-side password policy, mirrored client-side in password.js.
- */
+const PASSWORD_MAX_BYTES = 1024;
+
+function password_length_valid(string $password): bool
+{
+    return strlen($password) <= PASSWORD_MAX_BYTES;
+}
+
+function parse_form_date(string $value): ?DateTimeImmutable
+{
+    return $value >= '1970-01-01' && $value <= '2100-12-31' ? parse_date($value) : null;
+}
+
+function money_cents(string $amount): int
+{
+    [$whole, $fraction] = array_pad(explode('.', ltrim($amount, '-'), 2), 2, '');
+    $cents = (int) $whole * 100 + (int) str_pad($fraction, 2, '0');
+    return str_starts_with($amount, '-') ? -$cents : $cents;
+}
+
+/** Server-side password policy, mirrored client-side in password.js. */
 function password_meets_policy(string $password): bool
 {
-    return (bool) preg_match(
+    return password_length_valid($password) && (bool) preg_match(
         '/\A(?=.*\p{Ll})(?=.*\p{Lu})(?=.*[0-9])(?=.*[^\p{L}\p{N}]).{8,}\z/us',
         $password
     );
+}
+
+function secure_session_request(array $server): bool
+{
+    $configured = parse_url((string) App::config('base_url', '/'), PHP_URL_SCHEME);
+    $https = strtolower((string) ($server['HTTPS'] ?? ''));
+    $trusted = App::config('trusted_proxies', []);
+    $remote = $server['REMOTE_ADDR'] ?? '';
+
+    return strtolower((string) $configured) === 'https'
+        || in_array($https, ['on', '1'], true)
+        || ($remote !== '' && is_array($trusted) && in_array($remote, $trusted, true)
+            && strcasecmp(trim((string) ($server['HTTP_X_FORWARDED_PROTO'] ?? '')), 'https') === 0);
 }

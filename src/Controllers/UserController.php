@@ -62,13 +62,18 @@ final class UserController
         Csrf::require();
 
         $email = input_string('email');
-        $password = (string) ($_POST['password'] ?? '');
-        $verify = (string) ($_POST['verifyPassword'] ?? '');
+        $password = input_raw_string('password');
+        $verify = input_raw_string('verifyPassword');
         $role = input_string('role');
-        $reminders = !empty($_POST['receiveReminders']) ? 1 : 0;
+        $reminders = (int) input_checkbox('receiveReminders');
 
         $error = null;
-        if (mb_strlen($email) > 190) {
+        if (!input_strings_valid(['email', 'password', 'verifyPassword', 'role'])
+            || input_checkbox('receiveReminders') === null) {
+            $error = 'Invalid user form.';
+        } elseif (!password_length_valid($password) || !password_length_valid($verify)) {
+            $error = 'Passwords must be at most ' . PASSWORD_MAX_BYTES . ' bytes.';
+        } elseif (mb_strlen($email) > 190) {
             $error = 'Email must be at most 190 characters.';
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'Please enter a valid email address.';
@@ -87,7 +92,7 @@ final class UserController
             echo View::render('users/form', [
                 'title' => 'Add User',
                 'error' => $error,
-                'old'   => $_POST,
+                'old'   => input_draft(['email', 'role', 'receiveReminders']),
             ]);
 
             return;
@@ -122,7 +127,7 @@ final class UserController
         }
 
         $role = input_string('role');
-        if (!in_array($role, self::ASSIGNABLE_ROLES, true)) {
+        if (!in_array($role, self::ASSIGNABLE_ROLES, true) || input_checkbox('receiveReminders') === null) {
             flash('Choose a valid role.', 'error');
             redirect('/users');
         }
@@ -131,7 +136,7 @@ final class UserController
             'UPDATE users SET role = ?, receive_reminders = ? WHERE id = ? AND owner_id = ?'
         )->execute([
             $role,
-            !empty($_POST['receiveReminders']) ? 1 : 0,
+            (int) input_checkbox('receiveReminders'),
             (int) $user['id'],
             Auth::dataUserId(),
         ]);
@@ -151,7 +156,11 @@ final class UserController
             redirect('/users');
         }
 
-        $password = (string) ($_POST['password'] ?? '');
+        $password = input_raw_string('password');
+        if (!input_strings_valid(['password']) || !password_length_valid($password)) {
+            flash('Enter a password of at most ' . PASSWORD_MAX_BYTES . ' bytes.', 'error');
+            redirect('/users');
+        }
         if (!password_meets_policy($password)) {
             flash('Password must be at least 8 characters long and include at least one uppercase letter, '
                 . 'one lowercase letter, one number, and one special character.', 'error');
