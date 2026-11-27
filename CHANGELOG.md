@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.12-beta - 2026-11-26
+
+- Sign-in handles equivalent email spellings consistently and limits repeated
+  failures. Passwords are limited to 1,024 bytes; longer legacy passwords need
+  a reset, which ends sessions for that account.
+- The installer keeps private setup tokens out of URLs and better protects
+  first-time setup and upgrades. Forwarded HTTPS metadata is accepted only
+  from configured trusted proxies.
+- Browser pages use a stricter content security policy and local scripts for
+  forms and dashboard controls. Apache flat deployments better protect private
+  application files.
+- SMTP settings are validated before saving, and operators can optionally
+  restrict allowed relays. Reminder runs report failed budgets and continue
+  processing the others.
+- Budget updates keep allocations consistent when settings or bills change.
+  Editing a one-time bill replaces superseded unpaid entries, including overdue
+  ones, while preserving paid history.
+
+Schema version remains 9. No database migration, release-wide forced sign-in,
+or token reset is required.
+
 ## 0.11-beta - 2026-11-17
 
 - Paying, skipping and editing bills no longer fail with a server error when

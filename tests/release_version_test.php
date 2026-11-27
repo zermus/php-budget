@@ -21,7 +21,7 @@ function check(bool $ok, string $label): void
     $failures += (int) !$ok;
 }
 
-check(App::SCHEMA_VERSION === 9 && App::VERSION === '0.11-beta', 'release 0.11-beta uses schema 9');
+check(App::SCHEMA_VERSION === 9 && App::VERSION === '0.12-beta', 'release 0.12-beta uses schema 9');
 $version = App::VERSION;
 check(preg_match('/^\d+\.\d+-beta$/D', $version) === 1, 'runtime release version format');
 $files = [

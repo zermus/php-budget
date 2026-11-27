@@ -1,6 +1,6 @@
 # php-budget
 
-A simple self-hosted paycheck budgeting app. Version 0.11-beta.
+A simple self-hosted paycheck budgeting app. Version 0.12-beta.
 
 > **Beta:** releases are currently marked beta — the app works and is in
 > daily use, but expect rough edges and back up your database before
@@ -26,7 +26,8 @@ all dependencies, so Composer is not required on the server.
 - PHP 8.3+ with `pdo_mysql` and `mbstring` (and argon2 support, which the
   standard distribution packages include)
 - MySQL 5.7+ / MariaDB 10.2+
-- Apache (with `mod_rewrite`) or Nginx + PHP-FPM
+- Apache (with `mod_rewrite`) or Nginx with PHP-FPM and `public/` as the
+  document root
 - An SMTP relay for reminder emails (a local Postfix on 127.0.0.1:25 works)
 - OpenSSL AES-256-GCM and a valid base64 `app_key` decoding to 32 bytes for
   new SMTP password writes (existing prerequisites, not new requirements)
@@ -47,12 +48,13 @@ php-budget/
 
 ## Installation
 
-1. Extract the tarball on your server.
+1. Extract `php-budget-0.12-beta.tar.gz` on your server.
 2. Copy `config.sample.php` to `config.php` and fill in the database
    credentials, `base_url`, timezone, and a random `setup_token`. Generate one
    with `php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"`. The database user
    needs permission to create the database (or create it yourself first).
-   Email is configured later, in the app.
+   Email is configured later, in the app. Set a valid `app_key` as shown in
+   `config.sample.php` before saving SMTP passwords.
 3. Point your web server at the app (see Deployment modes below).
 4. Open `https://your.site/install.php` in a browser. Enter the private setup
    token from `config.php`; the installer then creates the schema, asks for
@@ -62,17 +64,17 @@ php-budget/
    by the installer, see below), then delete `public/install.php` if you like —
    it refuses to reinstall either way.
 
-## Upgrading from 0.10-beta
+## Upgrading from 0.11-beta
 
-Back up the database and `config.php`, including the existing `app_key`, before
-upgrading. Extract `php-budget-0.11-beta.tar.gz` over the installation while
-preserving `config.php` and its existing key; do not replace your configuration
-with the sample. The archive excludes `config.php`.
+These steps also apply to 0.10-beta. Back up the database and `config.php`,
+including the existing `app_key`, before upgrading. Extract
+`php-budget-0.12-beta.tar.gz` over the installation while preserving
+`config.php` and its existing key; do not replace your configuration with the
+sample. The archive excludes `config.php`.
 
-There are no special upgrade steps: schema version remains 9, with no migrations,
-new configuration keys or new requirements. This release introduces no forced
-sign-in or session/token invalidation. For older installations, follow the
-applicable earlier upgrade instructions below.
+Schema version remains 9: no database migration, release-wide forced sign-in,
+or token reset is required. Review the proxy, SMTP relay and password guidance
+below. For older installations, follow the applicable earlier upgrade steps.
 
 ## Upgrading from 0.9-beta
 
@@ -97,7 +99,10 @@ Review the schedule-change warning below before editing a pay schedule.
 
 - Configure the public HTTPS `base_url`. If relying on forwarded scheme metadata,
   set `trusted_proxies` to the exact connecting proxy IPs and configure those
-  proxies to overwrite `X-Forwarded-Proto`. Direct clients are not trusted.
+  proxies to overwrite `X-Forwarded-Proto`. Otherwise, leave it unset or empty.
+- Set `mail.allowed_smtp_hosts` to the exact SMTP hostnames or IP addresses only
+  if you want to restrict relay choices, including for reminder cron. Leave it
+  unset or empty to keep existing relay choices unrestricted.
 - For new setup, use a private random token of at least 32 bytes as shown in
   `config.sample.php`. Existing installations do not need to set one for upgrades.
 - Passwords are limited to 1,024 bytes. Reset longer legacy member passwords
