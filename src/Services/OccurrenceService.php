@@ -23,7 +23,7 @@ final class OccurrenceService
     /** Internal composition only: caller must already hold BudgetLock for this user. */
     public static function generateForUserLocked(PDO $pdo, int $userId): void
     {
-        $settings = ScheduleService::userSettings($userId);
+        $settings = ScheduleService::userSettings($userId, $pdo);
         if ($settings === null) {
             return;
         }
@@ -99,22 +99,20 @@ final class OccurrenceService
 
             case 'every_n_paychecks':
                 $n = (int) ($value['n'] ?? 0);
-                $anchor = (string) ($value['anchor'] ?? '');
-                if ($n < 1 || parse_date($anchor) === null) {
+                $anchor = parse_date((string) ($value['anchor'] ?? ''));
+                if ($n < 1 || $anchor === null) {
                     return [];
                 }
 
-                // The anchor marks the first paycheck this bill applies to and
-                // fixes its phase in the cycle. Extend the sequence back to the
-                // anchor so the phase is computed against the real series.
-                $from = max($from, ScheduleService::generationStart($settings, $from));
-                $seqFrom = min($from, parse_date($anchor));
-                $seq = array_column(ScheduleService::payDates($settings, $seqFrom, $to), 'date');
-
-                return array_values(array_filter(
-                    self::everyNth($seq, $anchor, $n),
-                    static fn (string $d): bool => $d >= $from->format('Y-m-d')
-                ));
+                $from = max($from, ScheduleService::generationStart($settings, $from), $anchor);
+                $skipped = ScheduleService::countBefore($settings, $anchor, $from);
+                $dates = [];
+                foreach (ScheduleService::payDates($settings, $from, $to) as $i => $payDate) {
+                    if (($skipped + $i) % $n === 0) {
+                        $dates[] = $payDate['date'];
+                    }
+                }
+                return $dates;
         }
 
         return [];
@@ -186,7 +184,8 @@ final class OccurrenceService
     /** Internal composition only: caller must already hold BudgetLock for this user. */
     public static function setPaidLocked(PDO $pdo, int $occurrenceId, int $userId, bool $paid, string $source = 'manual'): bool
     {
-        if (!in_array($source, ['manual', 'sync'], true) || self::ownedLocked($pdo, $occurrenceId, $userId) === null) {
+        $occ = self::ownedLocked($pdo, $occurrenceId, $userId);
+        if (!in_array($source, ['manual', 'sync'], true) || $occ === null || $occ['skipped']) {
             return false;
         }
         $stmt = $pdo->prepare($paid
@@ -213,7 +212,8 @@ final class OccurrenceService
     public static function updateAmount(int $occurrenceId, int $userId, string $amount): bool
     {
         return BudgetLock::run($userId, static function (PDO $pdo) use ($occurrenceId, $userId, $amount): bool {
-            if (self::ownedLocked($pdo, $occurrenceId, $userId) === null) {
+            $occ = self::ownedLocked($pdo, $occurrenceId, $userId);
+            if ($occ === null || $occ['skipped']) {
                 return false;
             }
             $pdo->prepare('UPDATE bill_occurrences SET amount = ? WHERE id = ?')->execute([$amount, $occurrenceId]);

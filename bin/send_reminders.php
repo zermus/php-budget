@@ -20,9 +20,7 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 
 use App\Database;
 use App\Mailer;
-use App\Services\AllocationService;
-use App\Services\OccurrenceService;
-use App\Services\ScheduleService;
+use App\Services\BudgetWindowService;
 
 $pdo = Database::pdo();
 $today = new DateTimeImmutable('today');
@@ -30,7 +28,7 @@ $todayStr = $today->format('Y-m-d');
 
 // One pass per budget owner; sub-users share the owner's schedule and bills.
 $owners = $pdo->query(
-    'SELECT u.id, u.email, u.receive_reminders, s.*
+    'SELECT u.id, u.email, u.receive_reminders
      FROM users u
      INNER JOIN user_settings s ON s.user_id = u.id
      WHERE u.owner_id IS NULL'
@@ -48,13 +46,15 @@ $failed = 0;
 foreach ($owners as $user) {
     $userId = (int) $user['id'];
 
+    $budgetFailed = false;
     try {
         // Keep the window fresh even if the user hasn't opened the dashboard.
-        ScheduleService::generateForUser($userId);
-        OccurrenceService::generateForUser($userId);
-        AllocationService::autoAllocate($userId);
+        $settings = BudgetWindowService::refresh($userId);
+        if ($settings === null) {
+            continue;
+        }
 
-        $leadDays = (int) $user['reminder_lead_days'];
+        $leadDays = (int) $settings['reminder_lead_days'];
         $dueLimit = $today->modify("+{$leadDays} days")->format('Y-m-d');
 
         $stmt = $pdo->prepare(
@@ -108,7 +108,7 @@ foreach ($owners as $user) {
         );
 
         // Mail settings the owner saved under Settings, falling back to config.php.
-        $mailSettings = Mailer::settingsFor($user);
+        $mailSettings = Mailer::settingsFor($settings);
 
         // The owner plus any sub-user who has reminders switched on.
         $recipients = [];
@@ -124,13 +124,15 @@ foreach ($owners as $user) {
             if (Mailer::send($email, $email, $subject, implode("\n", $lines), $mailSettings)) {
                 $sent++;
             } else {
-                fwrite(STDERR, "Failed to send reminder to {$email}: " . (Mailer::lastError() ?? 'unknown error') . "\n");
+                $budgetFailed = true;
+                fwrite(STDERR, "Reminder delivery failed for budget {$userId}: " . (Mailer::lastError() ?? 'unknown error') . "\n");
             }
         }
     } catch (\Throwable $e) {
-        $failed++;
+        $budgetFailed = true;
         fwrite(STDERR, "Budget owner {$userId} failed: " . $e->getMessage() . "\n");
     }
+    $failed += (int) $budgetFailed;
 }
 
 echo 'Reminders sent: ' . $sent . ' message(s) across ' . count($owners) . " budget(s) checked; $failed budget(s) failed.\n";
