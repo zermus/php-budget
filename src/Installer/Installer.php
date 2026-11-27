@@ -37,7 +37,7 @@ final class Installer
 
     public function setupAuthorized(string $configuredToken, string $providedToken): bool
     {
-        return $configuredToken !== '' && hash_equals($configuredToken, $providedToken);
+        return strlen($configuredToken) >= 32 && hash_equals($configuredToken, $providedToken);
     }
 
     public function upgradeAuthorized(
@@ -67,26 +67,38 @@ final class Installer
             return 'The setup token is invalid or is not configured.';
         }
 
-        $database = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
-        $lockName = 'php-budget:install:' . hash('sha256', $database);
-        $lock = $pdo->prepare('SELECT GET_LOCK(?, 10)');
-        $lock->execute([$lockName]);
-        if ((int) $lock->fetchColumn() !== 1) {
-            return 'Another installation is in progress. Please try again.';
-        }
-
-        try {
+        return $this->withSchemaLock($pdo, function () use ($pdo, $migrator, $email, $password, $verifyPassword, &$userId): ?string {
             if ($migrator->currentVersion() < App::SCHEMA_VERSION) {
                 $migrator->migrate();
             }
             if ($this->firstUserExists($pdo, $migrator)) {
                 return 'Installation has already been claimed by an account owner.';
             }
-
             return $this->createUser($pdo, $email, $password, $verifyPassword, $userId);
+        });
+    }
+
+    public function upgrade(PDO $pdo, Migrator $migrator): array
+    {
+        return $this->withSchemaLock($pdo, static function () use ($migrator): array {
+            $version = $migrator->currentVersion();
+            return $version > 0 && $version < App::SCHEMA_VERSION ? $migrator->migrate() : [];
+        });
+    }
+
+    private function withSchemaLock(PDO $pdo, callable $work): mixed
+    {
+        $database = (string) $pdo->query('SELECT DATABASE()')->fetchColumn();
+        $lockName = 'php-budget:install:' . substr(hash('sha256', $database), 0, 45);
+        $lock = $pdo->prepare('SELECT GET_LOCK(?, 10)');
+        $lock->execute([$lockName]);
+        if ((int) $lock->fetchColumn() !== 1) {
+            throw new \RuntimeException('Database setup is busy. Please try again.');
+        }
+        try {
+            return $work();
         } finally {
-            $release = $pdo->prepare('SELECT RELEASE_LOCK(?)');
-            $release->execute([$lockName]);
+            $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute([$lockName]);
         }
     }
 
@@ -123,6 +135,9 @@ final class Installer
         }
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return 'Please enter a valid email address.';
+        }
+        if (!password_length_valid($password) || !password_length_valid($verifyPassword)) {
+            return 'Passwords must be at most ' . PASSWORD_MAX_BYTES . ' bytes.';
         }
         if ($password !== $verifyPassword) {
             return 'The passwords do not match. Please try again.';

@@ -62,25 +62,14 @@
                 </td>
                 <td class="actions">
                     <?php if (!$isMe): ?>
-                        <form action="<?= e(url('/users/password')) ?>" method="post" class="inline-form"
-                              onsubmit="return this.password.value !== '';">
+                        <form action="<?= e(url('/users/password')) ?>" method="post" class="inline-form">
                             <?= Csrf::field() ?>
                             <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
-                            <input type="password" name="password" placeholder="New password" class="narrow-input">
+                            <input type="password" name="password" required placeholder="New password" class="narrow-input">
                             <button type="submit" class="btn small">Reset</button>
                         </form>
-                        <?php
-                        // The browser decodes HTML entities before running the
-                        // handler, so e() alone can't protect a JS string: an
-                        // email like o'brien@... broke out of the quotes. JSON
-                        // with every quote hex-escaped is a safe JS literal.
-                        $confirmJs = json_encode(
-                            'Remove ' . $user['email'] . '? Your budget data is not affected.',
-                            JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE
-                        );
-                        ?>
                         <form action="<?= e(url('/users/delete')) ?>" method="post" class="inline"
-                              onsubmit="return confirm(<?= e($confirmJs) ?>);">
+                              data-confirm="<?= e('Remove ' . $user['email'] . '? Your budget data is not affected.') ?>">
                             <?= Csrf::field() ?>
                             <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
                             <button type="submit" class="btn small danger">Remove</button>

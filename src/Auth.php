@@ -46,6 +46,12 @@ final class Auth
     public static function logout(): void
     {
         $_SESSION = [];
+        self::$user = null;
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            unset($params['lifetime']);
+            setcookie(session_name(), '', ['expires' => time() - 3600] + $params);
+        }
         session_destroy();
     }
 

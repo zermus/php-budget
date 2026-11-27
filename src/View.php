@@ -13,6 +13,9 @@ final class View
      */
     public static function render(string $template, array $data = [], ?string $layout = 'layout'): string
     {
+        if (str_starts_with($template, 'install/')) {
+            $data['unversionedAssets'] = true;
+        }
         $content = self::partial($template, $data);
 
         if ($layout === null) {

@@ -13,6 +13,8 @@ use DateTimeImmutable;
 
 final class BillController
 {
+    private const FORM_FIELDS = ['name', 'amount', 'recurrenceType', 'notes', 'monthDay', 'everyN', 'anchorPaycheck', 'oneTimeDate'];
+
     public function index(): void
     {
         Auth::requireBudgeter();
@@ -51,7 +53,7 @@ final class BillController
                 'title' => 'Add Bill',
                 'bill'  => null,
                 'error' => $error,
-                'old'   => $_POST,
+                'old'   => input_draft(self::FORM_FIELDS),
             ]);
 
             return;
@@ -114,7 +116,7 @@ final class BillController
                 'title' => 'Edit Bill',
                 'bill'  => $bill,
                 'error' => $error,
-                'old'   => $_POST,
+                'old'   => input_draft(self::FORM_FIELDS),
             ]);
 
             return;
@@ -144,10 +146,13 @@ final class BillController
                 || $fields['value'] !== (string) $bill['recurrence_value'];
 
             if ($rebuilt) {
-                $pdo->prepare(
-                    'DELETE FROM bill_occurrences
-                     WHERE bill_id = ? AND user_id = ? AND paid = 0 AND due_date >= ?'
-                )->execute([(int) $bill['id'], $userId, (new DateTimeImmutable('today'))->format('Y-m-d')]);
+                $sql = 'DELETE FROM bill_occurrences WHERE bill_id = ? AND user_id = ? AND paid = 0';
+                $params = [$billId, $userId];
+                if ($fields['type'] !== 'one_time' && $bill['recurrence_type'] !== 'one_time') {
+                    $sql .= ' AND due_date >= ?';
+                    $params[] = (new DateTimeImmutable('today'))->format('Y-m-d');
+                }
+                $pdo->prepare($sql)->execute($params);
             }
             return $rebuilt;
         });
@@ -221,11 +226,17 @@ final class BillController
      */
     private function validated(): array
     {
+        if (!input_strings_valid(self::FORM_FIELDS)) {
+            return [[], 'Invalid bill form.'];
+        }
         $name = input_string('name');
         $amount = input_decimal('amount');
         $type = input_string('recurrenceType');
         $notes = input_string('notes');
 
+        if (strlen(input_raw_string('notes')) > 65535) {
+            return [[], 'Notes must be at most 65,535 bytes.'];
+        }
         if ($name === '') {
             return [[], 'Name is required.'];
         }
@@ -251,16 +262,16 @@ final class BillController
                 if ($n < 1 || $n > 12) {
                     return [[], 'Paycheck interval must be between 1 and 12.'];
                 }
-                if (parse_date($anchor) === null) {
-                    return [[], 'Choose the first paycheck date this bill applies to.'];
+                if (parse_form_date($anchor) === null) {
+                    return [[], 'Choose a first paycheck date between 1970 and 2100.'];
                 }
                 $value = json_encode(['n' => $n, 'anchor' => $anchor]);
                 break;
 
             case 'one_time':
                 $date = input_string('oneTimeDate');
-                if (parse_date($date) === null) {
-                    return [[], 'Choose a valid due date.'];
+                if (parse_form_date($date) === null) {
+                    return [[], 'Choose a due date between 1970 and 2100.'];
                 }
                 $value = json_encode(['date' => $date]);
                 break;

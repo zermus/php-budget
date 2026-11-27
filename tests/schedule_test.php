@@ -231,8 +231,8 @@ check(
 echo "Installer authorization:\n";
 $installer = new Installer();
 check(!$installer->setupAuthorized('', ''), 'missing configured token fails closed');
-check(!$installer->setupAuthorized('operator-secret', 'wrong'), 'incorrect setup token is rejected');
-check($installer->setupAuthorized('operator-secret', 'operator-secret'), 'matching setup token is accepted');
+check(!$installer->setupAuthorized(str_repeat('a1', 32), 'wrong'), 'incorrect setup token is rejected');
+check($installer->setupAuthorized(str_repeat('a1', 32), str_repeat('a1', 32)), 'matching setup token is accepted');
 check(!$installer->upgradeAuthorized(true, false, true, false), 'anonymous upgrades are rejected');
 check($installer->upgradeAuthorized(true, true, true, true), 'authenticated administrator upgrades are accepted');
 check(!$installer->upgradeAuthorized(true, true, true, false), 'authenticated non-administrator upgrades are rejected');
@@ -313,7 +313,28 @@ function runDatabaseChecks(array $config): void
                     $upgradeMigrator->setVersion($migration['version']);
                 }
             }
-            $upgradeMigrator->migrate();
+            if ($version === 8 && function_exists('pcntl_fork')) {
+                $child = pcntl_fork();
+                if ($child === 0) {
+                    $connection = databasePdo($config, $upgradeDb);
+                    try {
+                        (new Installer())->upgrade($connection, new Migrator($connection));
+                        exit(0);
+                    } catch (Throwable) {
+                        exit(1);
+                    }
+                }
+                check($child > 0, 'concurrent upgrade worker starts');
+                (new Installer())->upgrade($upgradePdo, $upgradeMigrator);
+                pcntl_waitpid($child, $status);
+                check(pcntl_wifexited($status) && pcntl_wexitstatus($status) === 0, 'concurrent upgrade rechecks under shared lock');
+                // Forked PDO handles can be closed by the child at shutdown.
+                $server = serverPdo($config);
+                $upgradePdo = databasePdo($config, $upgradeDb);
+                $upgradeMigrator = new Migrator($upgradePdo);
+            } else {
+                (new Installer())->upgrade($upgradePdo, $upgradeMigrator);
+            }
             foreach (glob(APP_ROOT . '/migrations/00[2-9]*.php') as $file) {
                 $migration = require $file;
                 ($migration['up'])($upgradePdo, $upgradeMigrator);
@@ -334,7 +355,7 @@ function runDatabaseChecks(array $config): void
         $error = $installer->installFirstOwner(
             $pdo,
             $migrator,
-            'private-token',
+            str_repeat('a2', 32),
             'wrong-token',
             'owner@example.test',
             'Valid1!Password',
@@ -346,8 +367,8 @@ function runDatabaseChecks(array $config): void
         $error = $installer->installFirstOwner(
             $pdo,
             $migrator,
-            'private-token',
-            'private-token',
+            str_repeat('a2', 32),
+            str_repeat('a2', 32),
             'owner@example.test',
             'Valid1!Password',
             'Valid1!Password',
@@ -364,8 +385,8 @@ function runDatabaseChecks(array $config): void
         $secondError = $installer->installFirstOwner(
             $pdo,
             $migrator,
-            'private-token',
-            'private-token',
+            str_repeat('a2', 32),
+            str_repeat('a2', 32),
             'second@example.test',
             'Valid1!Password',
             'Valid1!Password',
@@ -389,8 +410,8 @@ function runDatabaseChecks(array $config): void
                     $childError = (new Installer())->installFirstOwner(
                         $childPdo,
                         new Migrator($childPdo),
-                        'private-token',
-                        'private-token',
+                        str_repeat('a2', 32),
+                        str_repeat('a2', 32),
                         "{$name}@example.test",
                         'Valid1!Password',
                         'Valid1!Password',

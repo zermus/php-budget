@@ -20,7 +20,7 @@ final class AllocationController
         $userId = Auth::dataUserId();
 
         $occurrence = $this->userOccurrence(input_int('occurrence_id', $_GET), $userId);
-        if ($occurrence === null) {
+        if ($occurrence === null || $occurrence['skipped']) {
             flash('Bill occurrence not found.', 'error');
             redirect('/dashboard');
         }
@@ -40,34 +40,36 @@ final class AllocationController
         $userId = Auth::dataUserId();
 
         $occurrence = $this->userOccurrence(input_int('occurrence_id'), $userId);
-        if ($occurrence === null) {
+        if ($occurrence === null || $occurrence['skipped']) {
             flash('Bill occurrence not found.', 'error');
             redirect('/dashboard');
         }
 
         $paycheckIds = $_POST['paycheck_id'] ?? [];
         $amounts = $_POST['amount'] ?? [];
-        if (!is_array($paycheckIds) || !is_array($amounts) || count($paycheckIds) !== count($amounts)) {
+        $editPath = '/allocations/edit?occurrence_id=' . (int) $occurrence['id'];
+        if (!is_array($paycheckIds) || !is_array($amounts) || array_keys($paycheckIds) !== array_keys($amounts)) {
             flash('Invalid allocation form.', 'error');
-            redirect('/allocations/edit?occurrence_id=' . (int) $occurrence['id']);
+            redirect($editPath);
         }
 
         $rows = [];
         foreach ($paycheckIds as $i => $paycheckId) {
-            $paycheckId = (int) $paycheckId;
-            $amount = str_replace(['$', ',', ' '], '', trim((string) ($amounts[$i] ?? '')));
-            if ($paycheckId < 1 && $amount === '') {
-                continue; // blank extra row
+            $rawAmount = $amounts[$i];
+            if ($paycheckId === '' && is_string($rawAmount) && trim($rawAmount) === '') {
+                continue;
             }
-            if (isset($rows[$paycheckId])) {
+            $id = input_int('id', ['id' => $paycheckId]);
+            $amount = input_decimal('amount', ['amount' => $rawAmount]);
+            if ($id < 1 || $amount === null) {
+                flash('Choose a paycheck and enter a valid amount for each split row.', 'error');
+                redirect($editPath);
+            }
+            if (isset($rows[$id])) {
                 flash('Each paycheck can appear only once in a split.', 'error');
-                redirect('/allocations/edit?occurrence_id=' . (int) $occurrence['id']);
+                redirect($editPath);
             }
-            if ((float) $amount > 99999999.99) {
-                flash('Each split amount must be at most $99,999,999.99.', 'error');
-                redirect('/allocations/edit?occurrence_id=' . (int) $occurrence['id']);
-            }
-            $rows[$paycheckId] = $amount;
+            $rows[$id] = $amount;
         }
 
         $error = AllocationService::saveSplit((int) $occurrence['id'], $rows, $userId);

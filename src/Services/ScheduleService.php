@@ -88,6 +88,54 @@ final class ScheduleService
         return $result;
     }
 
+    /** Number of schedule entries in [from, until), without enumerating history. */
+    public static function countBefore(array $settings, DateTimeImmutable $from, DateTimeImmutable $until): int
+    {
+        if ($from >= $until) {
+            return 0;
+        }
+        $type = $settings['schedule_type'] ?? '';
+        if ($type === 'weekly' || $type === 'biweekly') {
+            $step = $type === 'weekly' ? 7 : 14;
+            $first = self::firstSteppedDate($settings, $step, $from);
+            return $first !== null && $first < $until
+                ? 1 + intdiv(self::calendarDays($first, $until) - 1, $step) : 0;
+        }
+
+        $days = self::validMonthDays(match ($type) {
+            'monthly' => [(int) ($settings['day_of_month'] ?? 0)],
+            'semimonthly' => self::daysOfMonth($settings),
+            default => [],
+        });
+        $last = $until->modify('-1 day');
+        $months = ((int) $last->format('Y') - (int) $from->format('Y')) * 12
+            + (int) $last->format('n') - (int) $from->format('n');
+        if ($months === 0) {
+            return count(self::monthDayDates($days, $from, $last));
+        }
+        // Clamped days that coincide still occupy separate schedule slots.
+        return count(self::monthDayDates($days, $from, $from->modify('last day of this month')))
+            + ($months - 1) * count($days)
+            + count(self::monthDayDates($days, $last->modify('first day of this month'), $last));
+    }
+
+    private static function calendarDays(DateTimeImmutable $from, DateTimeImmutable $to): int
+    {
+        $utc = new \DateTimeZone('UTC');
+        return (int) (new DateTimeImmutable($from->format('Y-m-d'), $utc))
+            ->diff(new DateTimeImmutable($to->format('Y-m-d'), $utc))->format('%r%a');
+    }
+
+    private static function firstSteppedDate(array $settings, int $step, DateTimeImmutable $from): ?DateTimeImmutable
+    {
+        $anchor = parse_date((string) ($settings['anchor_date'] ?? ''));
+        if ($anchor === null) {
+            return null;
+        }
+        $remainder = self::calendarDays($anchor, $from) % $step;
+        return $from->modify('+' . (($step - $remainder) % $step) . ' days');
+    }
+
     /**
      * Generate/refresh the user's paychecks from the first of the current
      * month through today + WINDOW_DAYS. Idempotent: new rows get the
@@ -102,7 +150,7 @@ final class ScheduleService
     /** Internal composition only: caller must already hold BudgetLock for this user. */
     public static function generateForUserLocked(PDO $pdo, int $userId): void
     {
-        $settings = self::userSettings($userId);
+        $settings = self::userSettings($userId, $pdo);
         if ($settings === null) {
             return;
         }
@@ -119,12 +167,12 @@ final class ScheduleService
         $stmt = $pdo->prepare(
             'INSERT INTO paychecks (user_id, pay_date, amount, is_wave)
              VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE is_wave = VALUES(is_wave)'
+             ON DUPLICATE KEY UPDATE is_wave = ?'
         );
 
         $income = (string) ($settings['default_income'] ?? '0.00');
         foreach ($payDates as $payDate) {
-            $stmt->execute([$userId, $payDate['date'], $income, (int) $payDate['is_wave']]);
+            $stmt->execute([$userId, $payDate['date'], $income, (int) $payDate['is_wave'], (int) $payDate['is_wave']]);
         }
     }
 
@@ -133,9 +181,9 @@ final class ScheduleService
      *
      * @return array<string, mixed>|null
      */
-    public static function userSettings(int $userId): ?array
+    public static function userSettings(int $userId, ?PDO $pdo = null): ?array
     {
-        $stmt = Database::pdo()->prepare('SELECT * FROM user_settings WHERE user_id = ?');
+        $stmt = ($pdo ?? Database::pdo())->prepare('SELECT * FROM user_settings WHERE user_id = ?');
         $stmt->execute([$userId]);
         $row = $stmt->fetch();
 
@@ -161,21 +209,11 @@ final class ScheduleService
      */
     private static function steppedDates(array $settings, int $step, DateTimeImmutable $from, DateTimeImmutable $to): array
     {
-        $anchorRaw = (string) ($settings['anchor_date'] ?? '');
-        $anchor = parse_date($anchorRaw);
-        if ($anchor === null) {
+        $date = self::firstSteppedDate($settings, $step, $from);
+        if ($date === null) {
             return [];
         }
-
-        // First series member >= $from.
-        $diff = (int) $anchor->diff($from)->format('%r%a');
-        $k = intdiv($diff, $step);
-        if ($k * $step < $diff) {
-            $k++;
-        }
-
         $dates = [];
-        $date = $anchor->modify(($k * $step) . ' days');
         while ($date <= $to) {
             $dates[] = $date->format('Y-m-d');
             $date = $date->modify("+{$step} days");
@@ -193,7 +231,7 @@ final class ScheduleService
      */
     private static function monthDayDates(array $days, DateTimeImmutable $from, DateTimeImmutable $to): array
     {
-        $days = array_values(array_unique(array_filter($days, static fn (int $d): bool => $d >= 1 && $d <= 31)));
+        $days = self::validMonthDays($days);
         if ($days === []) {
             return [];
         }
@@ -216,6 +254,11 @@ final class ScheduleService
         }
 
         return $dates;
+    }
+
+    private static function validMonthDays(array $days): array
+    {
+        return array_values(array_unique(array_filter($days, static fn (int $day): bool => $day >= 1 && $day <= 31)));
     }
 
     /**

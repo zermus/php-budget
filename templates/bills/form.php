@@ -78,15 +78,4 @@ $type = $old['recurrenceType'] ?? ($bill['recurrence_type'] ?? 'every_n_paycheck
         <div class="message error"><?= e($error) ?></div>
     <?php endif; ?>
 </div>
-<script>
-(function () {
-    var select = document.getElementById('recurrenceType');
-    function toggle() {
-        document.querySelectorAll('.recurrence-fields').forEach(function (el) {
-            el.style.display = el.dataset.type === select.value ? '' : 'none';
-        });
-    }
-    select.addEventListener('change', toggle);
-    toggle();
-})();
-</script>
+<script src="<?= e(asset('js/bill-form.js')) ?>"></script>

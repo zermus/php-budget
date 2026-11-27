@@ -20,7 +20,7 @@ final class Csrf
         return '<input type="hidden" name="csrf_token" value="' . e(self::token()) . '">';
     }
 
-    public static function validate(?string $token): bool
+    public static function validate(mixed $token): bool
     {
         return is_string($token)
             && !empty($_SESSION['csrf_token'])

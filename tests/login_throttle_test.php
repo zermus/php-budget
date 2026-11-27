@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__ . '/session_cookie_test.php';
 
 [$pdo, $id, $email] = fixture();
-$alternate = 'tést@example.test';
+$alternate = 'Test@Example.TEST';
 try {
     $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
     foreach ([$email, $alternate] as $spelling) {
@@ -51,6 +51,22 @@ try {
     check(request('/login', $cookies, ['email' => $email, 'password' => 'wrong', 'csrf_token' => 'invalid'])[0] === 403 && $count() === 0, 'invalid CSRF does not count');
     [$status, $body] = login($cookies, 'unknown@example.test', 'dummy-password');
     check($status === 200 && str_contains($body, 'Invalid email or password.') && $count() === 1, 'unknown account follows generic failure path');
+    $reset();
+    $seed($email, '192.0.2.1', 50);
+    $cookies = [];
+    [$status, $body] = login($cookies, 'tést@example.test', 'dummy-password');
+    check($status === 200 && str_contains($body, 'Invalid email or password.'), 'accent-mismatched identity is not authenticated or put in the real account bucket');
+    $reset();
+    $pdo->exec('RENAME TABLE login_attempts TO login_attempts_fixture');
+    try {
+        check(login($cookies, $email, 'dummy-password')[0] === 500, 'missing throttle table on current schema fails closed');
+        $pdo->exec("UPDATE settings SET value = '5' WHERE name = 'schema_version'");
+        check(login($cookies, $email, 'dummy-password')[0] === 302, 'legacy administrator can still sign in to upgrade');
+    } finally {
+        $pdo->exec("UPDATE settings SET value = '9' WHERE name = 'schema_version'");
+        $pdo->exec('RENAME TABLE login_attempts_fixture TO login_attempts');
+    }
+    $cookies = [];
     $reset();
     for ($i = 0; $i < 20; $i++) {
         $seed("unknown$i@example.test", '127.0.0.1', 1);

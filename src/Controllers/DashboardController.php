@@ -9,7 +9,7 @@ use App\Csrf;
 use App\Database;
 use App\Services\AllocationService;
 use App\Services\BudgetLock;
-use App\Services\OccurrenceService;
+use App\Services\BudgetWindowService;
 use App\Services\ScheduleService;
 use App\View;
 use DateTimeImmutable;
@@ -26,12 +26,8 @@ final class DashboardController
 
         // Lazy generation: everything is idempotent and cheap at this scale,
         // so the window is always fresh exactly when it is viewed.
-        ScheduleService::generateForUser($userId);
-        OccurrenceService::generateForUser($userId);
-        AllocationService::autoAllocate($userId);
-
+        $settings = BudgetWindowService::refresh($userId) ?? [];
         $pdo = Database::pdo();
-        $settings = ScheduleService::userSettings($userId) ?? [];
 
         // Administrators use the account default; everyone else can keep their
         // own choice in the session. Choices are saved by saveSort().

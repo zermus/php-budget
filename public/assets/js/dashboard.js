@@ -83,6 +83,10 @@ document.addEventListener('DOMContentLoaded', function () {
             root.querySelectorAll('.occ-row[data-occurrence-id="' + row.dataset.occurrenceId + '"]')
                 .forEach(function (r) {
                     r.classList.toggle('paid', data.paid);
+                    r.classList.toggle('overdue', !data.paid && r.dataset.overdue === '1');
+                    r.querySelectorAll('[data-late="1"]').forEach(function (note) {
+                        note.classList.toggle('late', !data.paid);
+                    });
                     r.querySelector('.occ-paid').checked = data.paid;
                 });
             applyTotals(data.totals);
@@ -118,6 +122,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     payAmount.textContent = fmt(value);
                     applyTotals(data.totals);
+                }).catch(function () {
+                    window.alert('Could not save the amount.');
                 });
             return;
         }
@@ -138,6 +144,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     occAmount.querySelector('.amount').textContent = fmt(data.amount);
                     applyTotals(data.totals);
+                }).catch(function () {
+                    window.alert('Could not save the amount.');
                 });
         }
     });

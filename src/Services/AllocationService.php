@@ -18,49 +18,53 @@ final class AllocationService
      */
     public static function autoAllocate(int $userId): void
     {
-        BudgetLock::run($userId, static function (PDO $pdo) use ($userId): void {
-            $settings = ScheduleService::userSettings($userId) ?? [];
-            $to = (new DateTimeImmutable('today'))
-                ->modify('+' . ScheduleService::windowDays($settings) . ' days')
-                ->format('Y-m-d');
+        BudgetLock::run($userId, static fn (PDO $pdo) => self::autoAllocateLocked($pdo, $userId));
+    }
 
-            $stmt = $pdo->prepare(
-                'SELECT o.id, o.due_date, o.amount
-                 FROM bill_occurrences o
-                 LEFT JOIN allocations a ON a.occurrence_id = o.id
-                 WHERE o.user_id = ? AND o.due_date <= ? AND o.skipped = 0 AND a.id IS NULL FOR UPDATE'
-            );
-            $stmt->execute([$userId, $to]);
-            $orphans = $stmt->fetchAll();
+    /** Internal composition only: caller must already hold BudgetLock for this user. */
+    public static function autoAllocateLocked(PDO $pdo, int $userId): void
+    {
+        $settings = ScheduleService::userSettings($userId, $pdo) ?? [];
+        $to = (new DateTimeImmutable('today'))
+            ->modify('+' . ScheduleService::windowDays($settings) . ' days')
+            ->format('Y-m-d');
 
-            $latestBefore = $pdo->prepare(
-                'SELECT id FROM paychecks WHERE user_id = ? AND pay_date <= ?
-                 ORDER BY pay_date DESC LIMIT 1'
-            );
-            $earliest = $pdo->prepare(
-                'SELECT id FROM paychecks WHERE user_id = ? ORDER BY pay_date ASC LIMIT 1'
-            );
-            $insert = $pdo->prepare(
-                'INSERT IGNORE INTO allocations (user_id, paycheck_id, occurrence_id, amount)
-                 VALUES (?, ?, ?, ?)'
-            );
+        $stmt = $pdo->prepare(
+            'SELECT o.id, o.due_date, o.amount
+             FROM bill_occurrences o
+             LEFT JOIN allocations a ON a.occurrence_id = o.id
+             WHERE o.user_id = ? AND o.due_date <= ? AND o.skipped = 0 AND a.id IS NULL FOR UPDATE'
+        );
+        $stmt->execute([$userId, $to]);
+        $orphans = $stmt->fetchAll();
 
-            foreach ($orphans as $occ) {
-                $latestBefore->execute([$userId, $occ['due_date']]);
-                $paycheckId = $latestBefore->fetchColumn();
+        $latestBefore = $pdo->prepare(
+            'SELECT id FROM paychecks WHERE user_id = ? AND pay_date <= ?
+             ORDER BY pay_date DESC LIMIT 1'
+        );
+        $earliest = $pdo->prepare(
+            'SELECT id FROM paychecks WHERE user_id = ? ORDER BY pay_date ASC LIMIT 1'
+        );
+        $insert = $pdo->prepare(
+            'INSERT IGNORE INTO allocations (user_id, paycheck_id, occurrence_id, amount)
+             VALUES (?, ?, ?, ?)'
+        );
 
-                if ($paycheckId === false) {
-                    $earliest->execute([$userId]);
-                    $paycheckId = $earliest->fetchColumn();
-                }
-                if ($paycheckId === false) {
-                    break; // no paychecks at all yet
-                }
+        foreach ($orphans as $occ) {
+            $latestBefore->execute([$userId, $occ['due_date']]);
+            $paycheckId = $latestBefore->fetchColumn();
 
-                $insert->execute([$userId, (int) $paycheckId, (int) $occ['id'], (string) $occ['amount']]);
+            if ($paycheckId === false) {
+                $earliest->execute([$userId]);
+                $paycheckId = $earliest->fetchColumn();
             }
-            self::carryForward($pdo, $userId);
-        });
+            if ($paycheckId === false) {
+                break; // no paychecks at all yet
+            }
+
+            $insert->execute([$userId, (int) $paycheckId, (int) $occ['id'], (string) $occ['amount']]);
+        }
+        self::carryForward($pdo, $userId);
     }
 
     private static function carryForward(PDO $pdo, int $userId): void
@@ -88,13 +92,14 @@ final class AllocationService
         $merge = $pdo->prepare(
             'INSERT INTO allocations (user_id, paycheck_id, occurrence_id, amount, carried_from_date)
              VALUES (?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE amount = allocations.amount + VALUES(amount),
-                 carried_from_date = LEAST(COALESCE(allocations.carried_from_date, VALUES(carried_from_date)),
-                                           VALUES(carried_from_date))'
+             ON DUPLICATE KEY UPDATE amount = allocations.amount + ?,
+                 carried_from_date = LEAST(COALESCE(allocations.carried_from_date, ?),
+                                           ?)'
         );
         $delete = $pdo->prepare('DELETE FROM allocations WHERE id = ? AND user_id = ?');
         foreach ($sources as $source) {
-            $merge->execute([$userId, $current['id'], $source['occurrence_id'], $source['amount'], $source['source_date']]);
+            $merge->execute([$userId, $current['id'], $source['occurrence_id'], $source['amount'], $source['source_date'],
+                $source['amount'], $source['source_date'], $source['source_date']]);
             $delete->execute([$source['id'], $userId]);
         }
     }

@@ -48,6 +48,9 @@ final class Mailer
             ? ($settings['smtp_' . $field] ?? $default)
             : App::config('mail.smtp.' . $field, $default);
 
+        $storedPassword = $settings['smtp_password'] ?? null;
+        $password = $account ? Secrets::decrypt($storedPassword) : App::config('mail.smtp.password', '');
+
         return [
             'transport'  => $pick($settings['mail_transport'] ?? null, 'mail.transport', 'smtp'),
             'from'       => $pick($settings['mail_from'] ?? null, 'mail.from', self::defaultFrom()),
@@ -55,8 +58,8 @@ final class Mailer
             'host'       => $smtp('host', '127.0.0.1'),
             'port'       => (int) $smtp('port', 25) ?: 25,
             'username'   => $smtp('username', ''),
-            'password'   => $account ? (Secrets::decrypt($settings['smtp_password'] ?? null) ?? '')
-                : App::config('mail.smtp.password', ''),
+            'password'   => $password ?? '',
+            'password_unreadable' => $account && $storedPassword !== null && $password === null,
             'encryption' => $smtp('encryption', 'none'),
             'log_path'   => App::config('mail.log_path', APP_ROOT . '/mail.log'),
         ];
@@ -90,7 +93,8 @@ final class Mailer
         string $toName,
         string $subject,
         string $body,
-        ?array $mailSettings = null
+        ?array $mailSettings = null,
+        ?callable $createMailer = null
     ): bool {
         self::$lastError = null;
         $config = $mailSettings ?? self::settingsFor(null);
@@ -100,8 +104,16 @@ final class Mailer
             return self::sendToLog($to, $toName, $subject, $body, (string) $config['log_path']);
         }
 
+        if ($transport === 'smtp') {
+            if (!empty($config['password_unreadable'])) {
+                return self::fail('Saved SMTP password cannot be decrypted. Restore the key or replace the password.');
+            }
+            if (!self::hostAllowed((string) $config['host'])) {
+                return self::fail('SMTP host is not allowed by server policy.');
+            }
+        }
         try {
-            $mail = new PHPMailer(true);
+            $mail = $createMailer ? $createMailer() : new PHPMailer(true);
             $mail->CharSet = PHPMailer::CHARSET_UTF8;
             $mail->Timeout = self::SMTP_TIMEOUT;
 
@@ -138,13 +150,51 @@ final class Mailer
             $mail->Subject = $subject;
             $mail->Body = $body;
 
-            return $mail->send();
-        } catch (MailException $e) {
-            self::$lastError = trim($e->getMessage());
-            error_log('[php-budget] Mail send failed to ' . $to . ': ' . $e->getMessage());
+            return $mail->send() ?: self::fail('Mail delivery failed. Check the configured transport and sender.');
+        } catch (MailException) {
+            return self::fail('Mail delivery failed. Check the configured transport and sender.');
+        }
+    }
 
+    private static function fail(string $message): bool
+    {
+        self::$lastError = $message;
+        error_log('[php-budget] ' . $message);
+        return false;
+    }
+
+    private static function hostAllowed(string $host): bool
+    {
+        $allowed = App::config('mail.allowed_smtp_hosts', []);
+        if ($allowed === []) {
+            return true;
+        }
+        if (!is_array($allowed) || !self::validSmtpHost($host)) {
             return false;
         }
+        foreach ($allowed as $entry) {
+            if (is_string($entry) && self::validSmtpHost($entry) && self::canonicalHost($entry) === self::canonicalHost($host)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function canonicalHost(string $host): string
+    {
+        $packed = @inet_pton(trim($host, '[]'));
+        return $packed === false ? strtolower(rtrim($host, '.')) : bin2hex($packed);
+    }
+
+    public static function validSmtpHost(string $host): bool
+    {
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            return true;
+        }
+        if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
+            return filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+        }
+        return filter_var(rtrim($host, '.'), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false;
     }
 
     private static function sendToLog(
@@ -163,6 +213,7 @@ final class Mailer
             $body
         );
 
-        return file_put_contents($path, $entry, FILE_APPEND | LOCK_EX) !== false;
+        return @file_put_contents($path, $entry, FILE_APPEND | LOCK_EX) === strlen($entry)
+            ?: self::fail('Cannot write reminder mail log. Check the configured log path and permissions.');
     }
 }

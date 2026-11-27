@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Auth;
 use App\Csrf;
 use App\Database;
+use App\LoginThrottle;
 use App\Mailer;
 use App\Secrets;
 use App\Services\BudgetLock;
@@ -17,18 +18,33 @@ use DateTimeImmutable;
 
 final class SettingsController
 {
+    private const SCHEDULE_FIELDS = ['scheduleType', 'anchorDate', 'semiDay1', 'semiDay2', 'monthDay',
+        'defaultIncome', 'windowDays', 'reminderLeadDays'];
+    private const MAIL_FIELDS = ['mailTransport', 'mailFrom', 'mailFromName', 'smtpHost', 'smtpPort',
+        'smtpEncryption'];
+
     public function form(): void
     {
         $user = Auth::requireLogin();
         $settings = Auth::isAdmin() ? (ScheduleService::userSettings(Auth::dataUserId()) ?? []) : [];
 
-        $settings = $this->migrateMailPassword($settings, Auth::dataUserId());
+        if (Auth::canManageAccount() && Auth::isOwner()) {
+            $settings = $this->migrateMailPassword($settings, Auth::dataUserId());
+        }
+        $old = $_SESSION['settings_draft'] ?? [];
+        unset($_SESSION['settings_draft']);
+        $effective = Mailer::settingsFor($settings);
+        $settings['smtp_password_unreadable'] = $effective['password_unreadable'];
+        $settings['smtp_password_saved'] = !empty($settings['smtp_password']);
+        $settings['effective_transport'] = $effective['transport'];
+        $settings['effective_encryption'] = $effective['encryption'];
+        unset($settings['smtp_password'], $user['password_hash']);
 
         echo View::render('settings/form', [
             'title'    => 'Settings',
             'user'     => $user,
             'settings' => $settings,
-            'old'      => [],
+            'old'      => $old,
         ]);
     }
 
@@ -46,7 +62,20 @@ final class SettingsController
         }
 
         Auth::requireAdmin();
-        $this->saveSettings($user);
+        if ($action === 'reminders') {
+            $receive = input_checkbox('receiveReminders');
+            if ($receive === null) {
+                $this->fail('Invalid reminder preference.');
+            }
+            Database::pdo()->prepare('UPDATE users SET receive_reminders = ? WHERE id = ?')
+                ->execute([(int) $receive, (int) $user['id']]);
+            flash('Your reminder preference was saved.');
+            redirect('/settings');
+        }
+        if ($action !== 'settings') {
+            $this->fail('Invalid settings form.');
+        }
+        $this->saveSettings();
     }
 
     /**
@@ -59,16 +88,18 @@ final class SettingsController
         Csrf::require();
 
         $stored = ScheduleService::userSettings(Auth::dataUserId()) ?? [];
+        $owner = Auth::isOwner();
+        $_SESSION['settings_draft'] = array_filter(
+            input_draft($owner ? array_merge(self::SCHEDULE_FIELDS, self::MAIL_FIELDS) : self::SCHEDULE_FIELDS),
+            static fn (string $value): bool => strlen($value) <= 1024
+        );
         try {
-            $posted = $this->mailFields($stored);
+            $profile = $owner ? array_replace($stored, $this->mailFields($stored)) : $stored;
         } catch (\InvalidArgumentException $e) {
             $this->fail($e->getMessage());
         }
-        $config = Mailer::settingsFor(array_merge($stored, $posted));
-
-        $target = $config['transport'] === 'smtp'
-            ? sprintf('SMTP %s:%d (%s)', $config['host'], $config['port'], $config['encryption'])
-            : (string) $config['transport'];
+        $config = Mailer::settingsFor($profile);
+        $target = (string) $config['transport'];
 
         $ok = Mailer::send(
             (string) $user['email'],
@@ -93,7 +124,7 @@ final class SettingsController
     private function migrateMailPassword(array $settings, int $userId): array
     {
         $stored = $settings['smtp_password'] ?? null;
-        if ($stored !== null && !Secrets::isEncrypted($stored) && Secrets::available()) {
+        if ($stored !== null && strlen($stored) <= 734 && !Secrets::isEncrypted($stored) && Secrets::available()) {
             try {
                 $encrypted = Secrets::encrypt($stored);
                 Database::pdo()->prepare(
@@ -110,6 +141,9 @@ final class SettingsController
     /** @param array<string, mixed> $stored @return array<string, mixed> */
     private function mailFields(array $stored): array
     {
+        if (!input_strings_valid([...self::MAIL_FIELDS, 'smtpUsername', 'smtpPassword']) || input_checkbox('smtpPasswordClear') === null) {
+            throw new \InvalidArgumentException('Invalid email settings.');
+        }
         $fallback = Mailer::settingsFor(null);
         $transport = input_string('mailTransport');
         $encryption = input_string('smtpEncryption');
@@ -119,12 +153,12 @@ final class SettingsController
         }
         foreach (['mailFrom' => ['From address', 190], 'mailFromName' => ['From name', 190],
                   'smtpUsername' => ['SMTP username', 190], 'smtpHost' => ['SMTP host', 255]] as $field => [$label, $limit]) {
-            if (mb_strlen(input_string($field)) > $limit) {
+            if (mb_strlen(input_raw_string($field)) > $limit) {
                 throw new \InvalidArgumentException("$label must be at most $limit characters.");
             }
         }
         $host = input_string('smtpHost');
-        if ($host !== '' && !self::validSmtpHost($host)) {
+        if ($host !== '' && !Mailer::validSmtpHost($host)) {
             throw new \InvalidArgumentException('SMTP host must be a hostname or IP address (set the port separately).');
         }
         $port = input_string('smtpPort');
@@ -135,12 +169,12 @@ final class SettingsController
         if ($from !== '' && !filter_var($from, FILTER_VALIDATE_EMAIL)) {
             throw new \InvalidArgumentException('The "from" address must be a valid email address.');
         }
-        $username = input_string('smtpUsername');
-        $password = $_POST['smtpPassword'] ?? '';
-        if (!is_string($password)) {
-            throw new \InvalidArgumentException('Enter a valid SMTP password.');
+        $username = input_raw_string('smtpUsername');
+        $password = input_raw_string('smtpPassword');
+        if (strlen($password) > 734) {
+            throw new \InvalidArgumentException('SMTP password must be at most 734 bytes.');
         }
-        $clear = !empty($_POST['smtpPasswordClear']);
+        $clear = input_checkbox('smtpPasswordClear');
         $server = true;
         foreach (['smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_password'] as $field) {
             $server = $server && ($stored[$field] ?? null) === null;
@@ -161,7 +195,7 @@ final class SettingsController
             return $mail;
         }
         $previous = Mailer::settingsFor($stored);
-        $unchanged = self::canonicalHost((string) $mail['smtp_host']) === self::canonicalHost((string) $previous['host'])
+        $unchanged = Mailer::canonicalHost((string) $mail['smtp_host']) === Mailer::canonicalHost((string) $previous['host'])
             && $mail['smtp_port'] === (int) $previous['port']
             && $encryption === $previous['encryption'] && $username === $previous['username'];
         try {
@@ -171,42 +205,24 @@ final class SettingsController
                 $password = Secrets::encrypt($password);
             } else {
                 $password = $stored['smtp_password'] ?? null;
-                if (Secrets::isEncrypted($password) && Secrets::decrypt($password) === null) {
+                if ($transport === 'smtp' && Secrets::isEncrypted($password) && Secrets::decrypt($password) === null) {
                     throw new \InvalidArgumentException('Replace or explicitly clear the unreadable SMTP password.');
                 }
                 if ($password !== null && !$unchanged) {
                     throw new \InvalidArgumentException('Connection details changed. Supply a replacement password or clear both username and password.');
                 }
-                if ($password !== null && !Secrets::isEncrypted($password)) {
+                if ($transport === 'smtp' && $password !== null && !Secrets::isEncrypted($password) && strlen($password) <= 734) {
                     $password = Secrets::encrypt($password);
                 }
             }
         } catch (\RuntimeException $e) {
             throw new \InvalidArgumentException('SMTP password encryption failed. Configure a valid app_key and supported OpenSSL before saving passwords.');
         }
-        if ($username !== '' && ($password === null || Secrets::decrypt($password) === '')) {
+        if ($transport === 'smtp' && $username !== '' && ($password === null || Secrets::decrypt($password) === '')) {
             throw new \InvalidArgumentException('Supply an SMTP password, or clear both username and password for an unauthenticated relay.');
         }
         $mail['smtp_password'] = $password;
         return $mail;
-    }
-
-    private static function canonicalHost(string $host): string
-    {
-        $host = trim($host, " []\t\n\r\0\x0B");
-        $packed = @inet_pton($host);
-        return $packed === false ? strtolower(rtrim($host, '.')) : bin2hex($packed);
-    }
-
-    private static function validSmtpHost(string $host): bool
-    {
-        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
-            return true;
-        }
-        if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
-            return filter_var(substr($host, 1, -1), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
-        }
-        return filter_var(rtrim($host, '.'), FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false;
     }
 
     /**
@@ -218,10 +234,13 @@ final class SettingsController
         return ($stored === null && $chosen === $fallback) ? null : $chosen;
     }
 
-    /** @param array<string, mixed> $user */
-    private function saveSettings(array $user): void
+    private function saveSettings(): void
     {
+        if (!input_strings_valid(self::SCHEDULE_FIELDS) || !ctype_digit(input_string('reminderLeadDays'))) {
+            $this->fail('Invalid schedule or reminder settings.');
+        }
         $userId = Auth::dataUserId();
+        $owner = Auth::isOwner();
         $type = input_string('scheduleType');
         $anchorDate = null;
         $daysOfMonth = null;
@@ -231,8 +250,8 @@ final class SettingsController
             case 'weekly':
             case 'biweekly':
                 $anchorDate = input_string('anchorDate');
-                if (parse_date($anchorDate) === null) {
-                    $this->fail('Choose a valid anchor pay date.');
+                if (parse_form_date($anchorDate) === null) {
+                    $this->fail('Choose an anchor pay date between 1970 and 2100.');
                 }
                 break;
 
@@ -278,13 +297,13 @@ final class SettingsController
 
         try {
             $scheduleChanged = BudgetLock::run($userId, function (\PDO $pdo) use (
-                $userId, $type, $anchorDate, $daysOfMonth, $dayOfMonth, $income, $leadDays, $windowDays, $today, $todayStr
+                $userId, $owner, $type, $anchorDate, $daysOfMonth, $dayOfMonth, $income, $leadDays, $windowDays, $today, $todayStr
             ): bool {
                 $pdo->prepare('INSERT IGNORE INTO user_settings (user_id) VALUES (?)')->execute([$userId]);
                 $lock = $pdo->prepare('SELECT * FROM user_settings WHERE user_id = ? FOR UPDATE');
                 $lock->execute([$userId]);
                 $old = $lock->fetch();
-                $mail = $this->mailFields($old);
+                $mail = $owner ? $this->mailFields($old) : $old;
                 $new = array_merge($old, [
                     'schedule_type' => $type,
                     'anchor_date' => $anchorDate !== '' ? $anchorDate : null,
@@ -359,12 +378,23 @@ final class SettingsController
     /** @param array<string, mixed> $user */
     private function savePassword(array $user): void
     {
-        $current = (string) ($_POST['currentPassword'] ?? '');
-        $new = (string) ($_POST['password'] ?? '');
-        $verify = (string) ($_POST['verifyPassword'] ?? '');
-
-        if (!password_verify($current, (string) $user['password_hash'])) {
+        if (!input_strings_valid(['currentPassword', 'password', 'verifyPassword'])) {
+            $this->fail('Invalid password form.');
+        }
+        $current = input_raw_string('currentPassword');
+        $new = input_raw_string('password');
+        $verify = input_raw_string('verifyPassword');
+        $id = (int) $user['id'];
+        if (LoginThrottle::confirmationBlocked($id)) {
+            $this->fail('Too many password confirmation attempts. Please wait 15 minutes.');
+        }
+        $valid = password_length_valid($current) && password_verify($current, (string) $user['password_hash']);
+        LoginThrottle::recordConfirmation($id, $valid);
+        if (!$valid) {
             $this->fail('Current password is incorrect.');
+        }
+        if (!password_length_valid($new) || !password_length_valid($verify)) {
+            $this->fail('Passwords must be at most ' . PASSWORD_MAX_BYTES . ' bytes.');
         }
         if ($new !== $verify) {
             $this->fail('The new passwords do not match.');
